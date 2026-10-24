@@ -151,38 +151,64 @@ export const PanitiaPage: React.FC = () => {
   }, [signatureInkColor]);
 
   // Check Supabase session with local / demo fallback support
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
-      const savedSession = localStorage.getItem('hmp_panitia_session');
-      if (savedSession) {
-        try {
-          setSession(JSON.parse(savedSession));
-        } catch {
-          setSession({ user: { email: 'panitia@hmi.org' } });
-        }
-      } else {
-        setSession({ user: { email: 'panitia@hmi.org' } });
+// ✅ 1. Sesi diawali dengan NULL jika tidak ada Supabase / belum login
+useEffect(() => {
+  if (!isSupabaseConfigured || !supabase) {
+    const savedSession = localStorage.getItem('hmp_panitia_session');
+    if (savedSession) {
+      try {
+        setSession(JSON.parse(savedSession));
+      } catch {
+        setSession(null);
       }
-      setAuthChecking(false);
-      return;
+    } else {
+      setSession(null); // FIX: Wajibkan login, jangan auto-set panitia@hmi.org
     }
+    setAuthChecking(false);
+    return;
+  }
 
-    supabase.auth.getSession().then(({ data: { session: currentSession } }: any) => {
-      setSession(currentSession);
-      setAuthChecking(false);
-    });
+  supabase.auth.getSession().then(({ data: { session: currentSession } }: any) => {
+    setSession(currentSession);
+    setAuthChecking(false);
+  });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: any, newSession: any) => {
-      setSession(newSession);
-      setAuthChecking(false);
-    });
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event: any, newSession: any) => {
+    setSession(newSession);
+    setAuthChecking(false);
+  });
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
+  return () => {
+    subscription.unsubscribe();
+  };
+}, []);
+
+// ✅ 2. Handle Login ketat menggunakan Supabase Auth asli
+const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setAuthError(null);
+  setResetSentNotice(null);
+  setAuthLoading(true);
+
+  if (!isSupabaseConfigured || !supabase) {
+    setAuthError('Koneksi Supabase belum terpasang di server. Cek Variabel Environment (VITE_SUPABASE_URL).');
+    setAuthLoading(false);
+    return;
+  }
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email: emailInput.trim(),
+    password: passwordInput,
+  });
+
+  setAuthLoading(false);
+
+  if (error) {
+    setAuthError('Email atau password salah / Belum dikonfirmasi.');
+  }
+};
 
   // Fetch CSV ONLY after session is authenticated
   useEffect(() => {
