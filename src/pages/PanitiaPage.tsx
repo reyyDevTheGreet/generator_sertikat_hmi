@@ -184,33 +184,42 @@ export const PanitiaPage: React.FC = () => {
   }, []);
 
   // Handle Login terpadu (Supabase Auth / Local Demo Fallback)
-  const handleLogin = async (e: React.FormEvent) => {
+const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     setResetSentNotice(null);
     setAuthLoading(true);
 
-    if (!isSupabaseConfigured || !supabase) {
-      if (emailInput.trim()) {
-        const demoSession = { user: { email: emailInput.trim() } };
-        localStorage.setItem('hmp_panitia_session', JSON.stringify(demoSession));
-        setSession(demoSession);
-      } else {
-        setAuthError('Email wajib diisi.');
-      }
+    console.log("Tombol login diklik! Mencoba menghubungi Supabase...");
+
+    // Pastikan supabase client ada
+    if (!supabase) {
+      console.error("SUPABASE CLIENT KOSONG! Cek file supabaseClient.ts");
+      setAuthError('Koneksi database (Supabase) tidak tersedia.');
       setAuthLoading(false);
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: emailInput.trim(),
-      password: passwordInput,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailInput.trim(),
+        password: passwordInput,
+      });
 
-    setAuthLoading(false);
+      console.log("Respon Supabase:", { data, error });
 
-    if (error) {
-      setAuthError('Email atau password salah / Belum dikonfirmasi.');
+      if (error) {
+        setAuthError(`Gagal Login: ${error.message}`);
+      } else {
+        console.log("Login berhasil!", data);
+        // Sesi akan otomatis tertangkap oleh onAuthStateChange di atas
+      }
+    } catch (err: any) {
+      console.error("Error tak terduga saat login:", err);
+      Terjadi kesalahan sistem: ${err.message || 'Unknown error'};
+      setAuthError(err.message || 'Terjadi kesalahan sistem.');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
