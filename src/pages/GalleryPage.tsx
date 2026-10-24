@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CONFIG } from '../config';
+import Logo from "../../src/assets/logo-hmi.png"
 import { RoleType, SuasanaType, SignerInfo } from '../types';
 import { CertificateCanvas } from '../components/CertificateCanvas';
 
@@ -210,9 +211,7 @@ export const GalleryPage: React.FC<GalleryPageProps> = ({
       <header className="bg-white border-b border-slate-200 py-4 shadow-xs mb-8 sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-800 to-teal-600 text-white flex items-center justify-center shadow-md font-bold text-sm tracking-wider">
-              HMI
-            </div>
+            <img src={Logo} alt="logo-hmi" className='h-15 w-15 rounded-xl flex justify-center items-center'/>
             <div>
               <h1 className="text-lg font-bold text-slate-900 leading-tight">
                 Katalog {CONFIG.designs.length} Desain Sertifikat
