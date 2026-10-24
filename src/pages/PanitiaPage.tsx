@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Papa from 'papaparse';
+import { createClient } from '@supabase/supabase-js';
 import Logo from '../assets/logo-hmi.png';
-import { supabase, isSupabaseConfigured } from '../supabaseClient';
 import { CONFIG, normalizeDesignId, normalizeJenis } from '../config';
 import { Participant, RoleType, SignerInfo } from '../types';
 import { CertificateCanvas } from '../components/CertificateCanvas';
+
+// -------------------------------------------------------------------------
+// INISIASI SUPABASE LANGSUNG DI SINI (TIDAK PERLU FILE SUPABASECLIENT.TS)
+// -------------------------------------------------------------------------
+const supabaseUrl = 'https://bkcxekrphldxcntvkdmg.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrY3hla3JwaGxkeGNudHZrZG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4NDQ1OTksImV4cCI6MjEwODQyMDU5OX0.d5mc7Zj9B5R1ShrF4tUP3XXpbnE3zSC-KZIU5l3CXGE';
+
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const PrintPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [container, setContainer] = useState<HTMLElement | null>(null);
@@ -140,21 +149,6 @@ export const PanitiaPage: React.FC = () => {
 
   // Cek Sesi Supabase
   useEffect(() => {
-    if (!supabase) {
-      const savedSession = localStorage.getItem('hmp_panitia_session');
-      if (savedSession) {
-        try {
-          setSession(JSON.parse(savedSession));
-        } catch {
-          setSession(null);
-        }
-      } else {
-        setSession(null);
-      }
-      setAuthChecking(false);
-      return;
-    }
-
     supabase.auth.getSession().then(({ data: { session: currentSession } }: any) => {
       setSession(currentSession);
       setAuthChecking(false);
@@ -172,7 +166,7 @@ export const PanitiaPage: React.FC = () => {
     };
   }, []);
 
-  // FITUR LOGIN YANG DIPAKSA TEMBAK KE SUPABASE (DIJAMIN JALAN)
+  // FITUR LOGIN UTAMA
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -180,15 +174,6 @@ export const PanitiaPage: React.FC = () => {
     setAuthLoading(true);
 
     try {
-      if (!supabase) {
-        // Fallback kalau supabase client bener-bener null
-        const demoSession = { user: { email: emailInput.trim() || "panitia@hmi.org" } };
-        localStorage.setItem('hmp_panitia_session', JSON.stringify(demoSession));
-        setSession(demoSession);
-        setAuthLoading(false);
-        return;
-      }
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email: emailInput.trim(),
         password: passwordInput,
@@ -198,10 +183,9 @@ export const PanitiaPage: React.FC = () => {
         setAuthError(`Gagal Masuk: ${error.message}`);
       } else if (data?.session) {
         setSession(data.session);
-        localStorage.setItem('hmp_panitia_session', JSON.stringify(data.session));
       }
     } catch (err: any) {
-      setAuthError(`Terjadi kesalahan sistem: ${err?.message || 'Unknown error'}`);
+      setAuthError(`Terjadi kesalahan: ${err?.message || 'Unknown error'}`);
     } finally {
       setAuthLoading(false);
     }
@@ -214,10 +198,6 @@ export const PanitiaPage: React.FC = () => {
   }, [session]);
 
   const handleResetPassword = async () => {
-    if (!supabase) {
-      setResetSentNotice('Gunakan email panitia untuk login.');
-      return;
-    }
     if (!emailInput.trim()) {
       alert('Ketik email Anda terlebih dahulu di kolom atas.');
       return;
@@ -236,20 +216,13 @@ export const PanitiaPage: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
-    localStorage.removeItem('hmp_panitia_session');
+    await supabase.auth.signOut();
     setSession(null);
     setParticipants([]);
     setSelectedIndices(new Set());
   };
 
-  const processAndSetSignature = async (
-    file: File,
-    signerIndex: number,
-    colorOverride?: 'black' | 'blue'
-  ) => {
+  const processAndSetSignature = async (file: File, signerIndex: number, colorOverride?: 'black' | 'blue') => {
     const colorToUse = colorOverride || signatureInkColor;
     if (signerIndex === 0) rawSigFile1Ref.current = file;
     else rawSigFile2Ref.current = file;
@@ -261,10 +234,7 @@ export const PanitiaPage: React.FC = () => {
       const transparentDataUrl = await cleanSignatureBackground(file, colorToUse);
       setSignatories((prev) => {
         const next = [...prev];
-        next[signerIndex] = {
-          ...next[signerIndex],
-          signatureImage: transparentDataUrl,
-        };
+        next[signerIndex] = { ...next[signerIndex], signatureImage: transparentDataUrl };
         return next;
       });
     } catch (err) {
@@ -420,10 +390,7 @@ export const PanitiaPage: React.FC = () => {
   const resetSignatureToDefault = (signerIndex: number) => {
     setSignatories((prev) => {
       const next = [...prev];
-      next[signerIndex] = {
-        ...next[signerIndex],
-        signatureImage: '',
-      };
+      next[signerIndex] = { ...next[signerIndex], signatureImage: '' };
       if (!next[0].signatureImage && !next[1].signatureImage) {
         localStorage.removeItem('hmp_signatories');
       }
