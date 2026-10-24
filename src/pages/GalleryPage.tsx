@@ -1,34 +1,162 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CONFIG } from '../config';
 import { RoleType, SuasanaType, SignerInfo } from '../types';
 import { CertificateCanvas } from '../components/CertificateCanvas';
 
+const CERT_W = 980;
+const CERT_H = 693;
+
 const DUMMY_DATA = {
   nama: 'Muhammad Abdurrahman Al-Fatih',
   seminar: 'Seminar Contoh Divisi Akademik',
+  kegiatan: 'seminar akademik',
   tanggal: '12 November 2026',
   nomor_sertifikat: '001/PST/SEM-AKD/XI/2026',
   nim: '2101005',
 };
 
-export const GalleryPage: React.FC = () => {
+/**
+ * Error boundary per preview: kalau satu desain crash,
+ * card lain tetap tampil dan kelihatan desain mana yang bermasalah.
+ */
+class PreviewBoundary extends React.Component<
+  { children: React.ReactNode; id: string },
+  { err: boolean; msg: string }
+> {
+  state = { err: false, msg: '' };
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      err: true,
+      msg: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('Preview gagal dirender:', this.props.id, error);
+  }
+
+  render() {
+    if (this.state.err) {
+      return (
+        <div className="w-[980px] h-[693px] bg-red-950 text-red-200 flex flex-col items-center justify-center gap-4 p-10 text-center">
+          <div className="text-4xl font-bold">Gagal render: {this.props.id}</div>
+          <div className="text-2xl opacity-80">{this.state.msg}</div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Baca signatories dari localStorage dengan aman
+function loadSignatories(): SignerInfo[] {
+  try {
+    const saved = localStorage.getItem('hmp_signatories');
+    if (!saved) return CONFIG.signatories;
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed as SignerInfo[];
+    return CONFIG.signatories;
+  } catch {
+    return CONFIG.signatories;
+  }
+}
+
+/**
+ * Komponen pembungkus preview kartu dengan auto-scaling responsif:
+ * Menjamin 100% card ter-render proporsional di ukuran layar mana pun.
+ */
+interface CardPreviewProps {
+  designId: string;
+  jenis: RoleType;
+  signatories: SignerInfo[];
+}
+
+const ResponsiveCardPreview: React.FC<CardPreviewProps> = ({
+  designId,
+  jenis,
+  signatories,
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState<number>(0.35);
+
+  useEffect(() => {
+    const updateScale = () => {
+      if (!containerRef.current) return;
+      const width = containerRef.current.clientWidth;
+      if (width > 0) {
+        setScale(width / CERT_W);
+      }
+    };
+
+    updateScale();
+    const frame = requestAnimationFrame(updateScale);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      ro = new ResizeObserver(updateScale);
+      ro.observe(containerRef.current);
+    }
+
+    window.addEventListener('resize', updateScale);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updateScale);
+      if (ro) ro.disconnect();
+    };
+  }, []);
+
+  const height = Math.max(140, Math.round(CERT_H * scale));
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ height: `${height}px` }}
+      className="w-full relative bg-slate-900 overflow-hidden"
+    >
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: `${CERT_W}px`,
+          height: `${CERT_H}px`,
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+          pointerEvents: 'none',
+        }}
+      >
+        <PreviewBoundary id={designId}>
+          <CertificateCanvas
+            data={{
+              ...DUMMY_DATA,
+              desain: designId,
+              jenis,
+            }}
+            signatoriesOverride={signatories}
+          />
+        </PreviewBoundary>
+      </div>
+    </div>
+  );
+};
+
+interface GalleryPageProps {
+  onSelectDesignForParticipant?: (designId: string) => void;
+  onNavigateToPeserta?: () => void;
+}
+
+export const GalleryPage: React.FC<GalleryPageProps> = ({
+  onSelectDesignForParticipant,
+  onNavigateToPeserta,
+}) => {
   const [activeJenis, setActiveJenis] = useState<RoleType>('peserta');
   const [activeFilter, setActiveFilter] = useState<string>('semua');
   const [modalDesignId, setModalDesignId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Load signatories dari localStorage (disimpan dari PanitiaPage)
-  const [signatories, setSignatories] = useState<SignerInfo[]>(() => {
-    const saved = localStorage.getItem('hmp_signatories');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return CONFIG.signatories;
-      }
-    }
-    return CONFIG.signatories;
-  });
+  const [signatories] = useState<SignerInfo[]>(loadSignatories);
 
   // Close modal on Escape
   useEffect(() => {
@@ -39,15 +167,9 @@ export const GalleryPage: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const copyToClipboard = (id: string) => {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard
-        .writeText(id)
-        .then(() => showToast(`Tersalin: ${id}`))
-        .catch(() => fallbackCopy(id));
-    } else {
-      fallbackCopy(id);
-    }
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2200);
   };
 
   const fallbackCopy = (text: string) => {
@@ -61,14 +183,20 @@ export const GalleryPage: React.FC = () => {
       document.execCommand('copy');
       showToast(`Tersalin: ${text}`);
     } catch {
-      alert(`ID Desain: ${text}`);
+      showToast(`ID: ${text}`);
     }
     document.body.removeChild(el);
   };
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 2200);
+  const copyToClipboard = (id: string) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(id)
+        .then(() => showToast(`Tersalin: ${id}`))
+        .catch(() => fallbackCopy(id));
+    } else {
+      fallbackCopy(id);
+    }
   };
 
   const filteredDesigns = CONFIG.designs.filter((d) => {
@@ -77,21 +205,17 @@ export const GalleryPage: React.FC = () => {
   });
 
   return (
-    <div className="min-h-screen pb-16">
+    <div className="min-h-screen bg-slate-50 pb-16">
       {/* Header Galeri */}
-      <header className="bg-white border-b border-slate-200 py-4 shadow-xs mb-8">
+      <header className="bg-white border-b border-slate-200 py-4 shadow-xs mb-8 sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-800 to-teal-600 text-white flex items-center justify-center shadow-md">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M3 9h18" />
-                <path d="M9 21V9" />
-              </svg>
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-800 to-teal-600 text-white flex items-center justify-center shadow-md font-bold text-sm tracking-wider">
+              HMI
             </div>
             <div>
               <h1 className="text-lg font-bold text-slate-900 leading-tight">
-                Katalog 15 Desain Sertifikat
+                Katalog {CONFIG.designs.length} Desain Sertifikat
               </h1>
               <p className="text-xs text-slate-500 font-medium">
                 Halaman Panitia • Pilih Desain untuk Seminar Anda
@@ -101,7 +225,13 @@ export const GalleryPage: React.FC = () => {
 
           <a
             href="/"
-            className="px-3.5 py-1.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+            onClick={(e) => {
+              if (onNavigateToPeserta) {
+                e.preventDefault();
+                onNavigateToPeserta();
+              }
+            }}
+            className="px-3.5 py-1.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer transition-colors"
           >
             ← Kembali ke Halaman Peserta
           </a>
@@ -118,7 +248,7 @@ export const GalleryPage: React.FC = () => {
                 Langkah 1
               </span>
               <p className="text-xs text-slate-700 font-medium">
-                Pilih salah satu dari 15 desain di bawah yang cocok dengan tema seminar Anda.
+                Pilih salah satu dari {CONFIG.designs.length} desain di bawah yang cocok dengan tema seminar Anda.
               </p>
             </div>
             <div className="bg-slate-50 rounded-xl p-4 border-l-4 border-blue-900">
@@ -126,7 +256,9 @@ export const GalleryPage: React.FC = () => {
                 Langkah 2
               </span>
               <p className="text-xs text-slate-700 font-medium">
-                Klik tombol <strong>"Salin ID Desain"</strong> (misalnya: <code className="bg-white px-1 py-0.5 rounded border border-slate-200">modern</code> atau <code className="bg-white px-1 py-0.5 rounded border border-slate-200">elegan-emas</code>).
+                Klik tombol <strong>"Salin ID Desain"</strong> (misalnya:{' '}
+                <code className="bg-white px-1 py-0.5 rounded border border-slate-200 font-mono">modern</code> atau{' '}
+                <code className="bg-white px-1 py-0.5 rounded border border-slate-200 font-mono">elegan-emas</code>).
               </p>
             </div>
             <div className="bg-slate-50 rounded-xl p-4 border-l-4 border-blue-900">
@@ -134,7 +266,9 @@ export const GalleryPage: React.FC = () => {
                 Langkah 3
               </span>
               <p className="text-xs text-slate-700 font-medium">
-                Tempelkan ID tersebut pada kolom <code className="bg-white px-1 py-0.5 rounded border border-slate-200">desain</code> di Google Sheets tab <strong>Final</strong>.
+                Tempelkan ID tersebut pada kolom{' '}
+                <code className="bg-white px-1 py-0.5 rounded border border-slate-200 font-mono">desain</code> di Google Sheets
+                tab <strong>Final</strong>.
               </p>
             </div>
           </div>
@@ -182,30 +316,25 @@ export const GalleryPage: React.FC = () => {
           </div>
         </section>
 
-        {/* Grid 15 Desain */}
+        {/* Grid Desain */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredDesigns.map((design) => (
             <div
               key={design.id}
               className="bg-white rounded-2xl border border-slate-200 shadow-xs hover:shadow-md transition-all overflow-hidden flex flex-col"
             >
-              {/* Mini Preview Box */}
+              {/* Mini Preview Box (Responsive Auto-Scaled) */}
               <div
                 onClick={() => setModalDesignId(design.id)}
-                className="w-full relative aspect-[980/693] bg-slate-900 overflow-hidden cursor-pointer group"
+                className="w-full relative cursor-pointer group"
                 title="Klik untuk memperbesar"
               >
-                <div className="absolute top-0 left-0 w-[980px] h-[693px] origin-top-left pointer-events-none scale-[0.38] sm:scale-[0.34] lg:scale-[0.37]">
-                  <CertificateCanvas
-                    data={{
-                      ...DUMMY_DATA,
-                      desain: design.id,
-                      jenis: activeJenis,
-                    }}
-                    signatoriesOverride={signatories}
-                  />
-                </div>
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <ResponsiveCardPreview
+                  designId={design.id}
+                  jenis={activeJenis}
+                  signatories={signatories}
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
                   <span className="px-3 py-1.5 rounded-lg bg-black/75 text-white text-xs font-bold shadow-md">
                     Lihat Besar
                   </span>
@@ -277,18 +406,17 @@ export const GalleryPage: React.FC = () => {
       {/* Modal Preview Besar */}
       {modalDesignId && (
         <div
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs z-50 flex items-center justify-center p-4"
           onClick={() => setModalDesignId(null)}
         >
           <div
-            className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            className="bg-white rounded-2xl max-w-5xl w-full max-h-[92vh] overflow-hidden flex flex-col shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  Desain:{' '}
-                  {CONFIG.designs.find((d) => d.id === modalDesignId)?.nama || modalDesignId}
+                  Desain: {CONFIG.designs.find((d) => d.id === modalDesignId)?.nama || modalDesignId}
                 </h3>
                 <span className="font-mono text-xs text-slate-500">
                   ID: {modalDesignId} (Salin ke kolom 'desain' di Sheets)
@@ -305,15 +433,17 @@ export const GalleryPage: React.FC = () => {
             </div>
 
             <div className="p-4 overflow-auto flex-1 bg-slate-900 flex justify-center items-center">
-              <div className="w-[980px] h-[693px] origin-center scale-[0.34] sm:scale-[0.55] md:scale-[0.75] lg:scale-[0.88] my-[-180px] sm:my-[-120px] md:my-[-60px] lg:my-[-30px]">
-                <CertificateCanvas
-                  data={{
-                    ...DUMMY_DATA,
-                    desain: modalDesignId,
-                    jenis: activeJenis,
-                  }}
-                  signatoriesOverride={signatories}
-                />
+              <div className="max-w-full overflow-auto p-2">
+                <PreviewBoundary id={modalDesignId}>
+                  <CertificateCanvas
+                    data={{
+                      ...DUMMY_DATA,
+                      desain: modalDesignId,
+                      jenis: activeJenis,
+                    }}
+                    signatoriesOverride={signatories}
+                  />
+                </PreviewBoundary>
               </div>
             </div>
 
@@ -324,7 +454,7 @@ export const GalleryPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => copyToClipboard(modalDesignId)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white rounded-xl text-xs font-bold cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
@@ -349,11 +479,13 @@ export const GalleryPage: React.FC = () => {
 
       {/* Footer dengan tombol hubungi panitia */}
       <footer className="mt-12 text-center text-xs text-slate-500 border-t border-slate-200 pt-6">
-        <p className="mb-3">© 2026 {CONFIG.organizationName} - {CONFIG.divisionName}.</p>
+        <p className="mb-3">
+          © 2026 {CONFIG.organizationName} - {CONFIG.divisionName}.
+        </p>
         {CONFIG.contactWhatsapp && (
           <a
             href={`https://wa.me/${CONFIG.contactWhatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(
-              `Halo Panitia Divisi Akademik HMP,\n\nSaya ingin bertanya terkait desain sertifikat.\n\nMohon bantuannya. Terima kasih banyak!`
+              `Halo Panitia Divisi Panitia HMI,\n\nSaya ingin bertanya terkait desain sertifikat.\n\nMohon bantuannya. Terima kasih banyak!`
             )}`}
             target="_blank"
             rel="noopener noreferrer"

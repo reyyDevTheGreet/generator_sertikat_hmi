@@ -7,6 +7,7 @@ export type RoleType = 'peserta' | 'panitia' | 'pemateri';
 export type SuasanaType = 'formal' | 'santai' | 'terang' | 'gelap';
 
 export interface Participant {
+   kegiatan?: string;
   nama: string;
   nim: string;
   email: string;

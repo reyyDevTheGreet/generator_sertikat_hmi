@@ -3,27 +3,127 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Galeri 15 Desain Sertifikat - Panitia HMP Divisi Akademik</title>
-    <meta name="description" content="Katalog 15 desain sertifikat resmi siap pakai untuk panitia seminar HMP Divisi Akademik. Pilih tema dan salin ID desain ke Google Sheets." />
+    <title>Galeri 15 Desain Sertifikat - Panitia HMI Divisi Panitia</title>
+    <meta name="description" content="Katalog 15 desain sertifikat resmi siap pakai untuk panitia seminar HMI Divisi Panitia. Pilih tema dan salin ID desain ke Google Sheets." />
 
-    <!-- Google Fonts: 5 keluarga font standar (Cinzel, Great Vibes, Outfit, Playfair Display, Plus Jakarta Sans) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Great+Vibes&family=Outfit:wght@500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
-    <!-- CSS -->
-    <link rel="stylesheet" href="./style.css" />
-    <link rel="stylesheet" href="./themes.css" />
+    <!-- Google Fonts: 5 keluarga font standar (Cinzel, Great Vibes, Outfit, Playfair Display, Plus Jakarta Sans, Caveat) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="icon" type="image/x-icon" href="./public/Icon-HMI.webp">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Great+Vibes&family=Outfit:wght@500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Caveat:wght@600;700&family=Alex+Brush&display=swap" rel="stylesheet" />
 
     <style>
+      :root {
+        --primary: #047857;
+        --primary-dark: #064e3b;
+        --text-main: #0f172a;
+        --text-muted: #64748b;
+        --border-color: #e2e8f0;
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        background-color: #f8fafc;
+        color: var(--text-main);
+        line-height: 1.5;
+        min-height: 100vh;
+        padding-bottom: 3rem;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 1rem;
+      }
+
       /* Khusus Halaman Galeri */
       .gallery-header {
         background: #ffffff;
         border-bottom: 1px solid var(--border-color);
-        padding: 1.5rem 0;
+        padding: 1.25rem 0;
         margin-bottom: 2rem;
         box-shadow: var(--shadow-sm);
+        position: sticky;
+        top: 0;
+        z-index: 40;
       }
+
+      .header-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .brand-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .brand-logo-badge {
+        width: 44px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .brand-titles h1 {
+        font-size: 1.15rem;
+        font-weight: 800;
+       color: #047857;
+        line-height: 1.2;
+      }
+
+      .brand-titles p {
+        font-size: 0.75rem;
+       color: #047857;
+        font-weight: 500;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-decoration: none;
+      }
+
+      .btn-primary {
+        background: var(--primary);
+        color: #ffffff;
+        border: 1px solid var(--primary);
+      }
+      .btn-primary:hover {
+        background: var(--primary-dark);
+      }
+
+      .btn-secondary {
+        background: #ffffff;
+       color: #047857;
+        border: 1px solid var(--border-color);
+      }
+      .btn-secondary:hover {
+        background: #f1f5f9;
+      }
+
       .gallery-intro {
         background: #ffffff;
         border-radius: 16px;
@@ -32,6 +132,7 @@
         box-shadow: var(--shadow-sm);
         margin-bottom: 2rem;
       }
+
       .steps-grid {
         display: grid;
         grid-template-columns: 1fr;
@@ -45,8 +146,8 @@
       }
       .step-item {
         background: #f8fafc;
-        border-radius: 10px;
-        padding: 1rem;
+        border-radius: 12px;
+        padding: 1.1rem;
         border-left: 4px solid var(--primary);
       }
       .step-num {
@@ -96,7 +197,7 @@
       .filter-btn {
         padding: 0.4rem 0.85rem;
         font-size: 0.8125rem;
-        font-weight: 600;
+        font-weight: 700;
         border-radius: 8px;
         border: 1px solid var(--border-color);
         background: #f8fafc;
@@ -112,7 +213,7 @@
         background: var(--primary);
         color: #ffffff;
         border-color: var(--primary);
-        box-shadow: 0 2px 6px rgba(30, 58, 138, 0.2);
+        box-shadow: 0 2px 6px rgba(4, 120, 87, 0.25);
       }
 
       /* Grid Desain */
@@ -135,7 +236,7 @@
 
       .design-card {
         background: #ffffff;
-        border-radius: 14px;
+        border-radius: 16px;
         border: 1px solid var(--border-color);
         box-shadow: var(--shadow-sm);
         overflow: hidden;
@@ -153,10 +254,9 @@
         width: 100%;
         position: relative;
         overflow: hidden;
-        background: #1e293b;
+        background: #0f172a;
         cursor: pointer;
-        /* A4 landscape aspect ratio 980 / 693 = ~1.414 */
-        aspect-ratio: 980 / 693;
+        min-height: 180px;
       }
       .card-preview-inner {
         position: absolute;
@@ -169,7 +269,7 @@
       }
 
       .card-info {
-        padding: 1rem 1.25rem 1.25rem;
+        padding: 1.15rem 1.25rem 1.25rem;
         display: flex;
         flex-direction: column;
         flex: 1;
@@ -195,32 +295,33 @@
         padding: 2px 8px;
         border-radius: 6px;
         border: 1px solid #cbd5e1;
-        font-weight: 600;
+        font-weight: 700;
       }
       .card-suasana-badges {
         display: flex;
         gap: 0.35rem;
         margin-bottom: 0.6rem;
+        flex-wrap: wrap;
       }
       .badge-suasana {
         font-size: 0.7rem;
-        padding: 1px 6px;
+        padding: 2px 7px;
         border-radius: 4px;
-        font-weight: 600;
+        font-weight: 700;
         text-transform: capitalize;
         background: #f1f5f9;
         color: #475569;
       }
-      .badge-suasana.formal { background: #eff6ff; color: #1e40af; }
-      .badge-suasana.santai { background: #fdf2f8; color: #be185d; }
-      .badge-suasana.terang { background: #fefce8; color: #854d0e; }
-      .badge-suasana.gelap { background: #334155; color: #f8fafc; }
+      .badge-suasana.formal { background: #eff6ff; color: #1e40af; border: 1px solid #dbeafe; }
+      .badge-suasana.santai { background: #fdf2f8; color: #be185d; border: 1px solid #fce7f3; }
+      .badge-suasana.terang { background: #fefce8; color: #854d0e; border: 1px solid #fef08a; }
+      .badge-suasana.gelap { background: #1e293b; color: #f8fafc; }
 
       .card-desc {
-        font-size: 0.8rem;
+        font-size: 0.8125rem;
         color: var(--text-muted);
-        line-height: 1.4;
-        margin-bottom: 1rem;
+        line-height: 1.45;
+        margin-bottom: 1.25rem;
         flex: 1;
       }
 
@@ -228,23 +329,69 @@
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 0.5rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid #f1f5f9;
       }
 
       /* Modal Preview Besar */
+      #gallery-preview-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.75);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        z-index: 9999;
+        backdrop-filter: blur(4px);
+      }
+      #gallery-preview-modal.open {
+        display: flex;
+      }
+      #gallery-preview-modal .modal-dialog {
+        background: #ffffff;
+        border-radius: 18px;
+        max-height: 94vh;
+        width: 95%;
+        max-width: 950px;
+        overflow: hidden;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+        display: flex;
+        flex-direction: column;
+      }
+      #gallery-preview-modal .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--border-color);
+        background: #ffffff;
+      }
+      #gallery-preview-modal .modal-close {
+        background: none;
+        border: none;
+        font-size: 1.75rem;
+        line-height: 1;
+        cursor: pointer;
+        color: #64748b;
+        padding: 0.25rem;
+      }
       .modal-preview-viewport {
         width: 100%;
         overflow: auto;
-        padding: 1rem;
-        background: #1e293b;
+        padding: 1.5rem;
+        background: #0f172a;
         display: flex;
         justify-content: center;
         align-items: center;
-        border-radius: 12px;
+        box-sizing: border-box;
+        flex: 1;
       }
       .modal-zoom-container {
         position: relative;
         display: block;
         margin: 0 auto;
+        overflow: hidden;
       }
 
       /* Toast Notifikasi Salin */
@@ -259,7 +406,7 @@
         border-radius: 9999px;
         box-shadow: var(--shadow-xl);
         font-size: 0.875rem;
-        font-weight: 600;
+        font-weight: 700;
         z-index: 10000;
         display: flex;
         align-items: center;
@@ -267,6 +414,7 @@
         opacity: 0;
         transition: transform 0.25s ease, opacity 0.25s ease;
         pointer-events: none;
+        border: 1px solid #334155;
       }
       .copy-toast.show {
         transform: translateX(-50%) translateY(0);
@@ -279,21 +427,15 @@
     <header class="gallery-header">
       <div class="container header-content">
         <div class="brand-wrapper">
-          <div class="brand-icon" style="background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect width="18" height="18" x="3" y="3" rx="2"></rect>
-              <path d="M3 9h18"></path>
-              <path d="M9 21V9"></path>
-            </svg>
-          </div>
+          <img src="./public/Icon-HMI.webp" alt="logo-hmi" class="brand-logo-badge"></img>
           <div class="brand-titles">
-            <h1>Katalog 15 Desain Sertifikat</h1>
-            <p>Halaman Panitia Divisi Akademik • Pilih Desain untuk Seminar Anda</p>
+            <h1>Katalog 15 Desain Sertifikat Resmi</h1>
+            <p>Halaman Panitia Divisi Acara • Pilih Desain untuk Seminar Anda</p>
           </div>
         </div>
 
         <div>
-          <a href="./index.html" class="btn btn-secondary" style="font-size: 0.8125rem;">
+          <a href="/" class="btn btn-secondary">
             ← Kembali ke Halaman Peserta
           </a>
         </div>
@@ -303,7 +445,7 @@
     <main class="container">
       <!-- PETUNJUK 3 LANGKAH -->
       <section class="gallery-intro">
-        <h2 style="font-size: 1.15rem; font-weight: 700; color: var(--primary-dark);">
+        <h2 style="font-size: 1.15rem; font-weight: 800; color: var(--primary-dark);">
           Panduan Memilih Desain Seminar
         </h2>
         <div class="steps-grid">
@@ -324,7 +466,7 @@
 
       <!-- CONTROLS & FILTER -->
       <section class="gallery-controls-bar">
-        <!-- 1. Pilihan Jenis Peran (Peserta, Panitia, Pemateri) -->
+        <!-- 1. Pilihan Jenis Peran -->
         <div class="filter-group">
           <span class="filter-label">Jenis Sertifikat:</span>
           <button type="button" class="filter-btn active" data-jenis="peserta">Peserta</button>
@@ -343,40 +485,34 @@
         </div>
       </section>
 
-      <!-- GRID 15 KARTU DESAIN -->
-      <section id="designs-grid" class="designs-grid">
-        <!-- Kartu di-render dinamis oleh galeri.js menggunakan komponen sertifikat asli -->
-      </section>
+      <!-- GRID KARTU DESAIN (di-render oleh src/galeri.tsx) -->
+      <section id="designs-grid" class="designs-grid"></section>
     </main>
 
     <!-- MODAL PREVIEW BESAR -->
     <div class="modal-overlay" id="gallery-preview-modal">
-      <div class="modal-dialog" style="max-width: 900px; width: 95%;">
+      <div class="modal-dialog">
         <div class="modal-header">
           <div>
-            <h3 id="modal-design-title">Preview Desain Sertifikat</h3>
+            <h3 id="modal-design-title" style="font-size: 1.1rem; font-weight: 800;">Preview Desain Sertifikat</h3>
             <span id="modal-design-id" style="font-family: monospace; font-size: 0.8rem; color: #64748b;">ID: -</span>
           </div>
           <button type="button" class="modal-close" id="btn-close-gallery-modal" aria-label="Tutup">&times;</button>
         </div>
-        <div class="modal-body" style="padding: 1rem;">
-          <div class="modal-preview-viewport" id="modal-viewport">
-            <div class="modal-zoom-container" id="modal-zoom-container">
-              <!-- Sertifikat besar di-inject ke sini -->
-            </div>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; flex-wrap: wrap; gap: 0.5rem;">
-            <p style="font-size: 0.8125rem; color: var(--text-muted); margin: 0;">
-              Tip: Panitia cukup menyalin ID desain ini ke kolom <code>desain</code> pada Google Sheets.
-            </p>
-            <button type="button" class="btn btn-primary" id="btn-modal-copy-id">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
-                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
-              </svg>
-              <span>Salin ID Desain</span>
-            </button>
-          </div>
+        <div class="modal-preview-viewport" id="modal-viewport">
+          <div class="modal-zoom-container" id="modal-zoom-container"></div>
+        </div>
+        <div style="padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); flex-wrap: gap; gap: 0.5rem; background: #ffffff;">
+          <p style="font-size: 0.8125rem; color: var(--text-muted); margin: 0;">
+            Tip: Panitia cukup menyalin ID desain ini ke kolom <code>desain</code> pada Google Sheets.
+          </p>
+          <button type="button" class="btn btn-primary" id="btn-modal-copy-id">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+            </svg>
+            <span>Salin ID Desain</span>
+          </button>
         </div>
       </div>
     </div>
@@ -389,8 +525,7 @@
       <span id="copy-toast-text">Tersalin ke clipboard</span>
     </div>
 
-    <!-- SCRIPTS -->
-    <script src="./config.js"></script>
-    <script src="./galeri.js"></script>
+    <!-- ENTRY TYPESCRIPT -->
+    <script type="module" src="./galeri.tsx"></script>
   </body>
 </html>

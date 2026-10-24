@@ -5,13 +5,19 @@
    Mobile-friendly, Modern, & High-Fidelity A4 Landscape Certificate System
    ========================================================================== */
 
-:root {
-  --primary: #1e3a8a;
-  --primary-light: #3b82f6;
-  --primary-dark: #0f172a;
+
+ :root {
+  /* ================= WARNA UTAMA HMI (HIJAU HITAM) ================= */
+  --primary: #006400;         /* Hijau Tua Khas HMI (Dark Green) */
+  --primary-light: #1fa055;   /* Hijau Daun Terang untuk aksen/hover */
+  --primary-dark: #0b0c10;    /* Hitam Pekat Khas HMI (Ilmu Pengetahuan) */
+
+  /* ================= AKSEN EMAS (MILAD / KEJAYAAN) ================= */
   --gold: #c59b27;
   --gold-light: #dfb746;
   --gold-dark: #966f12;
+
+  /* ================= LAIN-LAIN ================= */
   --border-color: #e2e8f0;
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-serif: 'Cinzel', 'Playfair Display', Georgia, serif;

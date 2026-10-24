@@ -5,25 +5,33 @@
 
 /* 1. VARIABEL & RESET DASAR */
 :root {
-  --primary: #1e3a8a;       /* Deep Academic Navy */
-  --primary-light: #3b82f6;
-  --primary-dark: #0f172a;
-  --gold: #c59b27;          /* Ornate Gold */
+  /* HMI Official Color Palette (Hijau & Hitam) */
+  --primary: #008751;       /* Hijau HMI (Keimanan & Kemakmuran) */
+  --primary-light: #10b981; /* Hijau Terang untuk Hover/Aksen */
+  --primary-dark: #005c36;  /* Hijau Gelap */
+  
+  --gold: #c59b27;          /* Emas Kejayaan Eksistensi HMI */
   --gold-light: #dfb746;
   --gold-dark: #966f12;
+
+  /* Black & Neutral Scale (Representasi Ilmu Pengetahuan & Background) */
   --bg-slate: #f8fafc;
   --card-bg: #ffffff;
-  --text-main: #1e293b;
-  --text-muted: #64748b;
+  --text-main: #0f172a;     /* Hitam Pekat (Kedalaman Ilmu Pengetahuan) */
+  --text-muted: #64748b;    /* Abu-abu Muted */
   --border-color: #e2e8f0;
+  
+  /* Status Token */
   --danger: #ef4444;
   --success: #10b981;
   --warning: #f59e0b;
   
+  /* Depth Signals */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   
+  /* Typography Systems */
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-serif: 'Cinzel', 'Playfair Display', Georgia, serif;
   --font-signature: 'Great Vibes', 'Alex Brush', cursive;
@@ -65,9 +73,8 @@ body {
 .header-content {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .brand-wrapper {
@@ -80,12 +87,9 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%);
-  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 10px rgba(30, 58, 138, 0.25);
 }
 
 .brand-titles h1 {
@@ -255,6 +259,8 @@ select.form-control {
   border: none;
   text-decoration: none;
   white-space: nowrap;
+  margin-left: 20px;
+  margin-top: 20px;
 }
 
 .btn-primary {

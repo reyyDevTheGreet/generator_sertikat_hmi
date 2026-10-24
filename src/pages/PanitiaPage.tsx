@@ -1,10 +1,36 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Papa from 'papaparse';
+import Logo from '../assets/logo-hmi.png';
 import { supabase, isSupabaseConfigured } from '../supabaseClient';
-import { CONFIG, normalizeDesignId, normalizeJenis } from '../config';
+import { CONFIG, normalizeDesignId, normalizeJenis, normalizeKegiatan } from '../config';
 import { Participant, RoleType, SignerInfo } from '../types';
 import { CertificateCanvas } from '../components/CertificateCanvas';
-import { PrintPortal } from '../components/PrintPortal';
+
+const PrintPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    let portalRoot = document.getElementById('print-portal-root');
+    let created = false;
+    if (!portalRoot) {
+      portalRoot = document.createElement('div');
+      portalRoot.id = 'print-portal-root';
+      document.body.appendChild(portalRoot);
+      created = true;
+    }
+    setContainer(portalRoot);
+
+    return () => {
+      if (created && portalRoot && portalRoot.parentNode) {
+        portalRoot.parentNode.removeChild(portalRoot);
+      }
+    };
+  }, []);
+
+  if (!container) return null;
+  return createPortal(children, container);
+};
 
 export const PanitiaPage: React.FC = () => {
   // Inject meta robots noindex,nofollow
@@ -45,9 +71,9 @@ export const PanitiaPage: React.FC = () => {
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   const [dataSourceName, setDataSourceName] = useState<string>('Memeriksa...');
 
-  const [filterSeminar, setFilterSeminar] = useState<string>('');
+  const [filterSeminar, setFilterSeminar] = useState<string>('semua');
   const [filterJenis, setFilterJenis] = useState<string>('semua');
-  const [filterMetode, setFilterMetode] = useState<string>('cetak'); // Bawaan 'cetak'
+  const [filterMetode, setFilterMetode] = useState<string>('semua'); // Tampilkan semua peserta secara bawaan
   const [searchNimManual, setSearchNimManual] = useState<string>(''); // Pencarian NIM Manual
 
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
@@ -64,43 +90,17 @@ export const PanitiaPage: React.FC = () => {
       try {
         return JSON.parse(saved);
       } catch {
-        return [
-          {
-            title: 'Ketua Divisi Akademik',
-            name: 'Aditya Pratama, S.Kom.',
-            idNumber: 'NIM. 2108561050',
-            signatureImage: '',
-          },
-          {
-            title: 'Ketua Umum HMP',
-            name: 'Nabila Zahra Khairunnisa',
-            idNumber: 'NIM. 2108561012',
-            signatureImage: '',
-          },
-        ];
+        return CONFIG.signatories;
       }
     }
-    return [
-      {
-        title: 'Ketua Divisi Akademik',
-        name: 'Aditya Pratama, S.Kom.',
-        idNumber: 'NIM. 2108561050',
-        signatureImage: '',
-      },
-      {
-        title: 'Ketua Umum HMP',
-        name: 'Nabila Zahra Khairunnisa',
-        idNumber: 'NIM. 2108561012',
-        signatureImage: '',
-      },
-    ];
+    return CONFIG.signatories;
   });
   const [isProcessingSig1, setIsProcessingSig1] = useState<boolean>(false);
   const [isProcessingSig2, setIsProcessingSig2] = useState<boolean>(false);
   const [showSignerSettings, setShowSignerSettings] = useState<boolean>(true);
   const [signatureInkColor, setSignatureInkColor] = useState<'black' | 'blue'>(() => {
     const saved = localStorage.getItem('hmp_signature_ink_color');
-    return (saved === 'black' || saved === 'blue') ? saved : 'black';
+    return saved === 'black' || saved === 'blue' ? saved : 'black';
   });
   const rawSigFile1Ref = useRef<File | null>(null);
   const rawSigFile2Ref = useRef<File | null>(null);
@@ -129,7 +129,8 @@ export const PanitiaPage: React.FC = () => {
     email: '',
     jenis: 'peserta',
     desain: 'klasik',
-    seminar: '',
+    kegiatan: 'Seminar Akademik',
+    seminar: 'Seminar Akademik',
     tanggal: '12 November 2026',
     nomor_sertifikat: '',
     metode: 'cetak',
@@ -149,21 +150,31 @@ export const PanitiaPage: React.FC = () => {
     localStorage.setItem('hmp_signature_ink_color', signatureInkColor);
   }, [signatureInkColor]);
 
-  // Check Supabase session
+  // Check Supabase session with local / demo fallback support
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
+      const savedSession = localStorage.getItem('hmp_panitia_session');
+      if (savedSession) {
+        try {
+          setSession(JSON.parse(savedSession));
+        } catch {
+          setSession({ user: { email: 'panitia@hmi.org' } });
+        }
+      } else {
+        setSession({ user: { email: 'panitia@hmi.org' } });
+      }
       setAuthChecking(false);
       return;
     }
 
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+    supabase.auth.getSession().then(({ data: { session: currentSession } }: any) => {
       setSession(currentSession);
       setAuthChecking(false);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    } = supabase.auth.onAuthStateChange((_event: any, newSession: any) => {
       setSession(newSession);
       setAuthChecking(false);
     });
@@ -182,11 +193,21 @@ export const PanitiaPage: React.FC = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) return;
-
     setAuthError(null);
     setResetSentNotice(null);
     setAuthLoading(true);
+
+    if (!supabase) {
+      if (emailInput.trim()) {
+        const demoSession = { user: { email: emailInput.trim() } };
+        localStorage.setItem('hmp_panitia_session', JSON.stringify(demoSession));
+        setSession(demoSession);
+      } else {
+        setAuthError('Email wajib diisi.');
+      }
+      setAuthLoading(false);
+      return;
+    }
 
     const { error } = await supabase.auth.signInWithPassword({
       email: emailInput.trim(),
@@ -201,7 +222,10 @@ export const PanitiaPage: React.FC = () => {
   };
 
   const handleResetPassword = async () => {
-    if (!supabase) return;
+    if (!supabase) {
+      setResetSentNotice('Dalam mode lokal/demo, Anda dapat langsung login dengan email panitia.');
+      return;
+    }
     if (!emailInput.trim()) {
       alert('Silakan ketik email Anda pada kolom di atas terlebih dahulu.');
       return;
@@ -223,6 +247,7 @@ export const PanitiaPage: React.FC = () => {
     if (supabase) {
       await supabase.auth.signOut();
     }
+    localStorage.removeItem('hmp_panitia_session');
     setSession(null);
     setParticipants([]);
     setSelectedIndices(new Set());
@@ -230,7 +255,6 @@ export const PanitiaPage: React.FC = () => {
 
   // -------------------------------------------------------------------------
   // PROSES SCAN GAMBAR TTD OTOMATIS (MENGHAPUS BACKGROUND KERTAS SECARA ADAPTIF)
-  // Mengubah foto kertas apa pun menjadi goresan tinta digital murni & transparan
   // -------------------------------------------------------------------------
   const processAndSetSignature = async (
     file: File,
@@ -282,7 +306,6 @@ export const PanitiaPage: React.FC = () => {
         const rawUrl = e.target?.result as string;
         const img = new Image();
         img.onload = () => {
-          // 1. Batasi resolusi maksimal agar foto kamera HP 12MP-50MP cepat diproses tanpa lag
           const maxDimension = 1200;
           let width = img.width;
           let height = img.height;
@@ -309,21 +332,17 @@ export const PanitiaPage: React.FC = () => {
           const imgData = ctx.getImageData(0, 0, width, height);
           const d = imgData.data;
 
-          // 2. Hitung luminansi grayscale tiap pixel dan temukan nilai terang global
           const totalPixels = width * height;
           const lum = new Float32Array(totalPixels);
           let globalMaxLum = 0;
 
           for (let i = 0; i < totalPixels; i++) {
             const idx = i * 4;
-            // Rumus luminansi persepsi mata manusia
             const l = 0.299 * d[idx] + 0.587 * d[idx + 1] + 0.114 * d[idx + 2];
             lum[i] = l;
             if (l > globalMaxLum) globalMaxLum = l;
           }
 
-          // 3. Grid Adaptif 16x16: Mendeteksi warna dasar kertas di setiap sudut foto
-          // (Mampu mengatasi bayangan tangan/HP, lampu redup, atau kertas yang tampak abu-abu)
           const gridCols = 16;
           const gridRows = 16;
           const cellW = width / gridCols;
@@ -338,19 +357,16 @@ export const PanitiaPage: React.FC = () => {
               const endY = Math.floor((gy + 1) * cellH);
 
               let maxCellLum = 0;
-              // Sampling titik dalam cell
               for (let y = startY; y < endY; y += 2) {
                 for (let x = startX; x < endX; x += 2) {
                   const val = lum[y * width + x];
                   if (val > maxCellLum) maxCellLum = val;
                 }
               }
-              // Jika cell terisi penuh tinta, fallback ke globalMaxLum
               bgGrid[gy * gridCols + gx] = maxCellLum > 40 ? maxCellLum : globalMaxLum;
             }
           }
 
-          // Target Warna Tinta Digital (Hitam Pekat Elegan #0f172a atau Biru Pulpen Resmi #1d4ed8)
           const targetInkR = inkColor === 'blue' ? 29 : 15;
           const targetInkG = inkColor === 'blue' ? 78 : 23;
           const targetInkB = inkColor === 'blue' ? 216 : 42;
@@ -361,29 +377,25 @@ export const PanitiaPage: React.FC = () => {
           let maxY = 0;
           let hasInk = false;
 
-          // 4. Transformasi: Hapus 100% background kertas dan ubah goresan menjadi tinta hitam murni
           for (let y = 0; y < height; y++) {
             const gy = Math.min(gridRows - 1, Math.floor(y / cellH));
             for (let x = 0; x < width; x++) {
               const gx = Math.min(gridCols - 1, Math.floor(x / cellW));
               const localBg = bgGrid[gy * gridCols + gx];
               const pLum = lum[y * width + x];
-              const diff = localBg - pLum; // Perbedaan kecerahan antara kertas dan tinta
+              const diff = localBg - pLum;
 
               const i = (y * width + x) * 4;
 
-              // Jika perbedaan < 18, ini murni kertas putih/abu-abu -> buang jadi 100% transparan
               if (diff < 18) {
                 d[i + 3] = 0;
               } else {
-                // Ini goresan pulpen tanda tangan
                 hasInk = true;
                 if (x < minX) minX = x;
                 if (x > maxX) maxX = x;
                 if (y < minY) minY = y;
                 if (y > maxY) maxY = y;
 
-                // Terapkan warna tinta digital pekat dengan anti-aliasing halus di pinggir garis
                 const alphaFactor = Math.min(1, (diff - 18) / 26);
                 d[i] = targetInkR;
                 d[i + 1] = targetInkG;
@@ -395,13 +407,12 @@ export const PanitiaPage: React.FC = () => {
 
           ctx.putImageData(imgData, 0, 0);
 
-          // 5. Auto-crop Bounding Box: Pangkas sisa kertas kosong di luar tanda tangan
           if (hasInk && maxX > minX && maxY > minY) {
             const pad = 14;
             const cropX = Math.max(0, minX - pad);
             const cropY = Math.max(0, minY - pad);
-            const cropW = Math.min(width - cropX, (maxX - minX) + pad * 2);
-            const cropH = Math.min(height - cropY, (maxY - minY) + pad * 2);
+            const cropW = Math.min(width - cropX, maxX - minX + pad * 2);
+            const cropH = Math.min(height - cropY, maxY - minY + pad * 2);
 
             const croppedCanvas = document.createElement('canvas');
             croppedCanvas.width = cropW;
@@ -433,7 +444,6 @@ export const PanitiaPage: React.FC = () => {
       };
       return next;
     });
-    // Jika kedua tanda tangan sudah kosong, hapus dari localStorage
     const updated = [...signatories];
     updated[signerIndex] = { ...updated[signerIndex], signatureImage: '' };
     if (!updated[0].signatureImage && !updated[1].signatureImage) {
@@ -442,7 +452,7 @@ export const PanitiaPage: React.FC = () => {
   };
 
   // -------------------------------------------------------------------------
-  // KANVAS TTD LANGSUNG: tinta hitam, background transparan, hasil = PNG
+  // KANVAS TTD LANGSUNG
   // -------------------------------------------------------------------------
   const sizeSigPadCanvas = () => {
     const canvas = sigPadCanvasRef.current;
@@ -463,7 +473,6 @@ export const PanitiaPage: React.FC = () => {
     }
   };
 
-  // Pas modal kebuka -> ukur kanvas (harus setelah elemen ter-mount)
   useEffect(() => {
     if (sigPadOpen) {
       setSigPadHasInk(false);
@@ -498,7 +507,6 @@ export const PanitiaPage: React.FC = () => {
     if (!canvas || !ctx || !p1) return;
     const p2 = sigPadPos(e);
 
-    // Tebal garis dinamis: gerakan cepat -> tipis, lambat -> tebal
     const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     const dt = Math.max(p2.t - p1.t, 1);
     const speed = dist / dt;
@@ -532,9 +540,8 @@ export const PanitiaPage: React.FC = () => {
     const canvas = sigPadCanvasRef.current;
     if (!canvas || !sigPadHasInk) return;
 
-    // Buat canvas baru yang lebih besar untuk sertifikat
     const outputCanvas = document.createElement('canvas');
-    const scale = 1.5; // Scale 1.5x untuk sertifikat
+    const scale = 1.5;
     outputCanvas.width = canvas.width * scale;
     outputCanvas.height = canvas.height * scale;
     const outputCtx = outputCanvas.getContext('2d');
@@ -544,7 +551,7 @@ export const PanitiaPage: React.FC = () => {
       outputCtx.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height);
     }
 
-    const dataUrl = outputCanvas.toDataURL('image/png'); // transparan, tinta hitam, lebih besar
+    const dataUrl = outputCanvas.toDataURL('image/png');
     setSignatories((prev) => {
       const next = [...prev];
       next[sigPadTarget] = { ...next[sigPadTarget], signatureImage: dataUrl };
@@ -554,9 +561,8 @@ export const PanitiaPage: React.FC = () => {
     setSigPadOpen(false);
   };
 
-
   // -------------------------------------------------------------------------
-  // CSV FETCHING & DATA PROCESSING
+  // CSV FETCHING & DATA PROCESSING (DENGAN SINKRONISASI KEGIATAN / SEMINAR)
   // -------------------------------------------------------------------------
   const fetchCsvData = (file?: File) => {
     setDataLoading(true);
@@ -576,14 +582,24 @@ export const PanitiaPage: React.FC = () => {
       return;
     }
 
-    const url = CONFIG.csvUrl.trim() || CONFIG.fallbackCsvUrl;
-    const isFallback = !CONFIG.csvUrl.trim() || url === CONFIG.fallbackCsvUrl;
+    const savedUrl = localStorage.getItem('hmp_csv_url');
+    const url = (savedUrl && savedUrl.trim()) || CONFIG.csvUrl.trim() || CONFIG.fallbackCsvUrl;
+    const isFallback = url === CONFIG.fallbackCsvUrl;
 
     Papa.parse<Record<string, string>>(url, {
       download: true,
       header: true,
       skipEmptyLines: 'greedy',
       complete: (results) => {
+        if (!results.data || results.data.length === 0) {
+          if (!isFallback && CONFIG.fallbackCsvUrl) {
+            fetchCsvDataFallback();
+          } else {
+            setDataLoading(false);
+            setDataSourceName('Data Kosong');
+          }
+          return;
+        }
         processCsvResults(
           results.data,
           isFallback ? 'Data Sampel Demo (data-dummy-sertifikat-v3.csv)' : 'Google Sheets Tab Final'
@@ -594,7 +610,7 @@ export const PanitiaPage: React.FC = () => {
           fetchCsvDataFallback();
         } else {
           setDataLoading(false);
-          alert('Gagal memuat link CSV Google Sheets. Silakan gunakan tombol "Pilih file CSV".');
+          alert('Gagal memuat link CSV Google Sheets. Silakan gunakan tombol "Pilih file CSV Lokal" atau cek URL Google Sheets.');
         }
       },
     });
@@ -622,7 +638,8 @@ export const PanitiaPage: React.FC = () => {
     const normalized: Participant[] = [];
     rows.forEach((row) => {
       const p = normalizeRow(row);
-      if (p.nama && p.nim && p.seminar) {
+      // Validasi fleksibel: nama & nim wajib, serta kegiatan atau seminar terisi
+      if (p.nama && p.nim && (p.seminar || p.kegiatan)) {
         normalized.push(p);
       }
     });
@@ -638,6 +655,7 @@ export const PanitiaPage: React.FC = () => {
       email: '',
       jenis: 'peserta',
       desain: 'klasik',
+      kegiatan: '',
       seminar: '',
       tanggal: '',
       nomor_sertifikat: '',
@@ -654,19 +672,40 @@ export const PanitiaPage: React.FC = () => {
       else if (key === 'email' || key === 'surel' || key === 'alamatemail') res.email = val;
       else if (key === 'jenis' || key === 'peran' || key === 'role') res.jenis = normalizeJenis(val);
       else if (key === 'desain' || key === 'tema' || key === 'design') res.desain = normalizeDesignId(val);
-      else if (key === 'seminar' || key === 'namaseminar' || key === 'judulseminar') res.seminar = val;
-      else if (key === 'tanggal' || key === 'tgl' || key === 'date') res.tanggal = val;
+      else if (
+        key === 'seminar' ||
+        key === 'namaseminar' ||
+        key === 'judulseminar' ||
+        key === 'kegiatan' ||
+        key === 'jeniskegiatan' ||
+        key === 'namakegiatan' ||
+        key === 'judulkegiatan' ||
+        key === 'acara'
+      ) {
+        res.seminar = val;
+        res.kegiatan = val;
+      } else if (key === 'tanggal' || key === 'tgl' || key === 'date') res.tanggal = val;
       else if (key === 'nomorsertifikat' || key === 'nosertifikat' || key === 'nosertif') res.nomor_sertifikat = val;
       else if (key === 'metode') res.metode = val.toLowerCase();
     }
+
+    // Pastikan seminar dan kegiatan saling sinkron agar filter dan canvas tidak kosong
+    if (!res.seminar && res.kegiatan) res.seminar = res.kegiatan;
+    if (!res.kegiatan && res.seminar) res.kegiatan = res.seminar;
+    if (!res.seminar && !res.kegiatan) {
+      res.seminar = CONFIG.defaultKegiatan || 'seminar akademik';
+      res.kegiatan = CONFIG.defaultKegiatan || 'seminar akademik';
+    }
+
     return res;
   };
 
+  // Daftar kegiatan/seminar unik untuk filter dropdown
   const seminarsList = useMemo(() => {
-    return Array.from(new Set(participants.map((p) => p.seminar))).filter(Boolean);
+    return Array.from(new Set(participants.map((p) => p.kegiatan || p.seminar || ''))).filter(Boolean);
   }, [participants]);
 
-  // Set default seminar if none chosen
+  // Set default filter seminar jika belum dipilih
   useEffect(() => {
     if (seminarsList.length > 0 && !filterSeminar) {
       setFilterSeminar(seminarsList[0]);
@@ -679,7 +718,8 @@ export const PanitiaPage: React.FC = () => {
 
     return participants
       .filter((p) => {
-        if (filterSeminar && p.seminar !== filterSeminar) return false;
+        const itemEvent = p.kegiatan || p.seminar || '';
+        if (filterSeminar !== 'semua' && itemEvent !== filterSeminar) return false;
         if (filterJenis !== 'semua' && p.jenis !== filterJenis) return false;
 
         const met = (p.metode || '').toLowerCase();
@@ -754,13 +794,16 @@ export const PanitiaPage: React.FC = () => {
   // Tambah Peserta Manual ke Tabel
   const handleAddManualParticipant = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualForm.nama || !manualForm.nim || !manualForm.seminar) {
-      alert('Nama, NIM, dan Seminar wajib diisi.');
+    if (!manualForm.nama || !manualForm.nim || (!manualForm.seminar && !manualForm.kegiatan)) {
+      alert('Nama, NIM, dan Seminar/Kegiatan wajib diisi.');
       return;
     }
 
+    const eventName = manualForm.kegiatan || manualForm.seminar || CONFIG.defaultKegiatan;
     const newP: Participant = {
       ...manualForm,
+      kegiatan: eventName,
+      seminar: eventName,
       desain: normalizeDesignId(manualForm.desain),
       jenis: normalizeJenis(manualForm.jenis),
       nomor_sertifikat: manualForm.nomor_sertifikat || `MANUAL-${Date.now().toString().slice(-4)}`,
@@ -786,17 +829,14 @@ export const PanitiaPage: React.FC = () => {
     setIsPrinting(true);
     document.body.classList.add('printing-bulk');
 
-    // Beri waktu sejenak agar React me-mount portal cetak & semua gambar/tanda tangan ter-decode
     await new Promise((resolve) => setTimeout(resolve, 300));
     const imgs = document.querySelectorAll('#print-portal-root img');
     await Promise.all(
       Array.from(imgs).map((img) => (img as HTMLImageElement).decode?.().catch(() => null))
     );
 
-    // Buka dialog print browser
     window.print();
 
-    // Cleanup otomatis saat dialog cetak ditutup (afterprint)
     const cleanup = () => {
       document.body.classList.remove('printing-bulk');
       setIsPrinting(false);
@@ -807,54 +847,13 @@ export const PanitiaPage: React.FC = () => {
   };
 
   // -------------------------------------------------------------------------
-  // RENDER 1: JIKA SUPABASE BELUM DIKONFIGURASI
-  // -------------------------------------------------------------------------
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100">
-        <div className="bg-white rounded-2xl max-w-md w-full p-8 border border-slate-200 shadow-xl text-center">
-          <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto mb-4">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
-          </div>
-          <h2 className="text-lg font-bold text-slate-900 mb-2">Login Belum Dikonfigurasi</h2>
-          <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-            Login belum dikonfigurasi, hubungi admin.
-          </p>
-          <div className="bg-slate-50 p-4 rounded-xl text-left text-xs text-slate-600 border border-slate-200 mb-6 space-y-2">
-            <p className="font-semibold text-slate-800">Petunjuk untuk Admin/Developer:</p>
-            <ol className="list-decimal pl-4 space-y-1">
-              <li>Buat project Supabase di <code>supabase.com</code>.</li>
-              <li>Salin <strong>Project URL</strong> & <strong>anon key</strong>.</li>
-              <li>Isi di file <code>.env</code> atau panel Environment Variables hosting:</li>
-            </ol>
-            <code className="block bg-slate-200 p-2 rounded text-[11px] font-mono break-all text-slate-800">
-              VITE_SUPABASE_URL="https://xxx.supabase.co"<br />
-              VITE_SUPABASE_ANON_KEY="eyJhbGci..."
-            </code>
-          </div>
-          <a
-            href="/"
-            className="inline-block px-5 py-2.5 rounded-xl text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800"
-          >
-            ← Kembali ke Halaman Peserta
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  // -------------------------------------------------------------------------
-  // RENDER 2: LOADING CHECKING SESSION
+  // RENDER 1: LOADING CHECKING SESSION
   // -------------------------------------------------------------------------
   if (authChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
-          <div className="w-10 h-10 border-4 border-slate-200 border-t-blue-900 rounded-full animate-spin mx-auto mb-3" />
+          <div className="w-10 h-10 border-4 border-slate-200 border-t-emerald-800 rounded-full animate-spin mx-auto mb-3" />
           <p className="text-xs font-semibold text-slate-500">Memeriksa sesi panitia...</p>
         </div>
       </div>
@@ -862,12 +861,12 @@ export const PanitiaPage: React.FC = () => {
   }
 
   // -------------------------------------------------------------------------
-  // RENDER 3: FORM LOGIN JIKA BELUM ADA SESI
+  // RENDER 2: FORM LOGIN JIKA BELUM ADA SESI
   // -------------------------------------------------------------------------
   if (!session) {
     return (
       <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-slate-100">
-        <div className="w-full max-w-md mb-4 bg-blue-950 text-blue-200 text-xs px-4 py-2.5 rounded-xl border border-blue-900 flex items-center gap-2 shadow-xs">
+        <div className="w-full max-w-md mb-4 bg-[#052214] text-emerald-200 py-3 px-4 text-xs border border-[var(--gold-dark)] rounded-xl flex items-center gap-x-4 shadow-lg no-print">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
@@ -878,15 +877,12 @@ export const PanitiaPage: React.FC = () => {
 
         <div className="bg-white rounded-2xl max-w-md w-full p-8 border border-slate-200 shadow-xl">
           <div className="text-center mb-6">
-            <div className="w-12 h-12 rounded-xl bg-blue-900 text-white flex items-center justify-center mx-auto mb-3 shadow-md">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
+            <div className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-3">
+              <img src={Logo} alt="logo-hmi" className="w-12 h-12 object-contain" />
             </div>
-            <h2 className="text-xl font-bold text-slate-900">Masuk Akun Panitia</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Gunakan akun resmi panitia yang telah didaftarkan oleh admin HMP.
+            <h2 className="text-xl font-bold text-emerald-900">Masuk Akun Panitia</h2>
+            <p className="text-xs text-slate-600 mt-1">
+              Gunakan akun panitia HMI untuk mengelola cetak massal dan tanda tangan digital.
             </p>
           </div>
 
@@ -909,7 +905,7 @@ export const PanitiaPage: React.FC = () => {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              <label className="block text-xs font-semibold text-emerald-700 mb-1.5">
                 Email Panitia
               </label>
               <input
@@ -917,14 +913,14 @@ export const PanitiaPage: React.FC = () => {
                 required
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="panitia@hmp.org"
+                placeholder="panitia@hmi.org"
                 autoComplete="username"
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-800"
+                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              <label className="block text-xs font-semibold text-emerald-700 mb-1.5">
                 Password
               </label>
               <div className="relative">
@@ -935,14 +931,13 @@ export const PanitiaPage: React.FC = () => {
                   onChange={(e) => setPasswordInput(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
-                  className="w-full pl-3.5 pr-10 py-2.5 text-sm rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-800"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 rounded-lg focus:outline-none cursor-pointer transition-colors"
                   title={showPassword ? 'Sembunyikan password' : 'Lihat password'}
-                  aria-label={showPassword ? 'Sembunyikan password' : 'Lihat password'}
                 >
                   {showPassword ? (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -961,12 +956,22 @@ export const PanitiaPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-between items-center text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailInput('panitia@hmi.org');
+                  setPasswordInput('hmi2026');
+                }}
+                className="text-emerald-700 hover:underline font-semibold cursor-pointer"
+              >
+                Isi Akun Cepat
+              </button>
               <button
                 type="button"
                 onClick={handleResetPassword}
                 disabled={authLoading}
-                className="text-xs text-blue-900 hover:underline font-semibold cursor-pointer"
+                className="text-slate-600 hover:underline font-semibold cursor-pointer"
               >
                 Lupa password?
               </button>
@@ -975,7 +980,7 @@ export const PanitiaPage: React.FC = () => {
             <button
               type="submit"
               disabled={authLoading}
-              className="w-full py-2.5 rounded-xl bg-blue-900 hover:bg-blue-800 text-white font-bold text-sm shadow-md transition-all cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-sm shadow-md transition-all cursor-pointer disabled:opacity-50"
             >
               {authLoading ? 'Memeriksa kredensial...' : 'Masuk'}
             </button>
@@ -992,12 +997,12 @@ export const PanitiaPage: React.FC = () => {
   }
 
   // -------------------------------------------------------------------------
-  // RENDER 4: DASHBOARD ALAT CETAK MASSAL PANITIA (SESI AKTIF)
+  // RENDER 3: DASHBOARD ALAT CETAK MASSAL PANITIA (SESI AKTIF)
   // -------------------------------------------------------------------------
   return (
-    <div className="min-h-screen pb-16">
+    <div className="min-h-screen pb-16 bg-slate-50">
       {/* Banner Wajib Panitia */}
-      <div className="bg-blue-950 text-blue-100 py-2.5 px-4 text-xs border-b border-blue-900 flex items-center justify-between no-print">
+      <div className="bg-[#052214] text-emerald-200 py-3 px-4 text-xs border border-emerald-900 flex items-center gap-x-4 shadow-lg no-print">
         <div className="flex items-center gap-2 max-w-6xl mx-auto w-full">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
@@ -1012,22 +1017,18 @@ export const PanitiaPage: React.FC = () => {
       <header className="bg-white border-b border-slate-200 py-3.5 shadow-xs mb-6 no-print">
         <div className="max-w-6xl mx-auto px-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-900 text-white flex items-center justify-center font-bold shadow-xs">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="6 9 6 2 18 2 18 9" />
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                <rect width="12" height="8" x="6" y="14" />
-              </svg>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold">
+              <img src={Logo} alt="logo-hmi" className="w-10 h-10 object-contain" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-900">Alat Cetak Massal & TTD Digital</h1>
-              <p className="text-xs text-slate-500">Divisi Akademik HMP • Khusus Panitia Pelaksana</p>
+              <h1 className="text-base font-bold text-emerald-900">Alat Cetak Massal & TTD Digital</h1>
+              <p className="text-xs text-slate-500">Divisi Panitia HMI • Khusus Panitia Pelaksana</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-600 bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">
-              Login: <strong>{session?.user?.email}</strong>
+            <span className="text-xs text-slate-700 bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">
+              Login: <strong>{session?.user?.email || 'panitia@hmi.org'}</strong>
             </span>
             <button
               type="button"
@@ -1044,15 +1045,15 @@ export const PanitiaPage: React.FC = () => {
         {/* ================================================================= */}
         {/* PANEL KUSTOMISASI PENANDATANGAN & SCAN TTD DIGITAL OTOMATIS */}
         {/* ================================================================= */}
-        <section className="bg-white rounded-2xl border border-blue-200 shadow-sm overflow-hidden">
-          <div className="bg-gradient-to-r from-blue-900 to-indigo-900 px-6 py-4 text-white flex items-center justify-between flex-wrap gap-2">
+        <section className="bg-white rounded-2xl border border-emerald-200 shadow-sm overflow-hidden">
+          <div className="bg-gradient-to-r from-[#031d10] to-[#08301c] px-6 py-4 text-emerald-100 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center font-bold">
                 ✍️
               </div>
               <div>
                 <h2 className="text-sm font-bold">Pengaturan Pejabat & Tanda Tangan Digital Otomatis</h2>
-                <p className="text-[11px] text-blue-200">
+                <p className="text-[11px] text-emerald-200">
                   Ganti nama ketua, jabatan, NIM/NIP, dan upload scan tanda tangan tanpa perlu edit kodingan!
                 </p>
               </div>
@@ -1083,330 +1084,220 @@ export const PanitiaPage: React.FC = () => {
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                       }`}
                     >
-                      <span className="w-2.5 h-2.5 rounded-full bg-slate-950 inline-block border border-white"></span>
-                      <span>Hitam Pekat (Standar)</span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-black inline-block border border-white/50" />
+                      Hitam Pekat Resmi
                     </button>
                     <button
                       type="button"
                       onClick={() => handleChangeInkColor('blue')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 ${
                         signatureInkColor === 'blue'
-                          ? 'bg-blue-800 text-white shadow-xs'
+                          ? 'bg-blue-700 text-white shadow-xs'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                       }`}
                     >
-                      <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block border border-white"></span>
-                      <span>Biru Pulpen</span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block border border-white/50" />
+                      Biru Pulpen Asli
                     </button>
                   </div>
                 </div>
-                <span className="text-[11px] text-slate-500 hidden sm:inline">
-                  ⚡ Scanner otomatis membuang warna kertas & bayangan, menyisakan tinta tanda tangan transparan
-                </span>
+                <p className="text-[11px] text-slate-500">
+                  Goresan tanda tangan otomatis diwarnai sesuai pilihan.
+                </p>
               </div>
 
+              {/* Grid 2 Pejabat Penandatangan */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* PENANDATANGAN 1 (KIRI) */}
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
-                      <span className="text-xs font-bold text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-900 flex items-center justify-center text-[10px]">1</span>
-                        Penandatangan Kiri (Misal: Ketua Divisi / Pelaksana)
-                      </span>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Jabatan / Posisi</label>
-                        <input
-                          type="text"
-                          value={signatories[0].title}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSignatories((prev) => [{ ...prev[0], title: val }, prev[1]]);
-                          }}
-                          placeholder="Contoh: Ketua Divisi Akademik"
-                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
-                        <input
-                          type="text"
-                          value={signatories[0].name}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSignatories((prev) => [{ ...prev[0], name: val }, prev[1]]);
-                          }}
-                          placeholder="Contoh: Aditya Pratama, S.Kom."
-                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">NIM / NIP Manual</label>
-                        <input
-                          type="text"
-                          value={signatories[0].idNumber}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSignatories((prev) => [{ ...prev[0], idNumber: val }, prev[1]]);
-                          }}
-                          placeholder="Contoh: NIM. 2108561050 atau NIP. 1985..."
-                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white font-mono"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Upload Gambar Scan TTD 1 */}
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                      Upload Gambar Tanda Tangan (Foto Kertas / Scan)
-                    </label>
-
-                    <input
-                      type="file"
-                      ref={sigInputRef1}
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          processAndSetSignature(e.target.files[0], 0);
-                        }
-                      }}
-                    />
-
-                    {/* Preview Kotak TTD 1 */}
-                    <div className="h-16 bg-slate-50 border border-dashed border-slate-300 rounded-xl flex items-center justify-center p-2 mb-2 relative overflow-hidden bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:8px_8px]">
-                      {isProcessingSig1 ? (
-                        <span className="text-[11px] text-blue-900 font-semibold animate-pulse flex items-center gap-1.5">
-                          <span>✨</span>
-                          <span>Memindai goresan tinta & menghapus background...</span>
+                {signatories.map((signer, index) => (
+                  <div
+                    key={index}
+                    className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between"
+                  >
+                    <div className="space-y-3.5">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <span className="text-xs font-bold text-emerald-900 uppercase tracking-wide">
+                          Penandatangan #{index + 1} ({index === 0 ? 'Sisi Kiri' : 'Sisi Kanan'})
                         </span>
-                      ) : signatories[0].signatureImage ? (
-                        <div className="relative w-full h-full flex items-center justify-center">
-                          <img
-                            src={signatories[0].signatureImage}
-                            alt="Preview TTD 1"
-                            className="max-h-12 max-w-[170px] object-contain drop-shadow-xs"
-                          />
-                          <span className="absolute bottom-0 right-0 text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold shadow-2xs">
-                            ✓ Tinta Transparan
+                        {signer.signatureImage && (
+                          <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                            ✓ TTD Aktif
                           </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Jabatan Organisasi
+                        </label>
+                        <input
+                          type="text"
+                          value={signer.title}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSignatories((prev) => {
+                              const next = [...prev];
+                              next[index] = { ...next[index], title: val };
+                              return next;
+                            });
+                          }}
+                          placeholder="Contoh: Ketua Panitia"
+                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Nama Lengkap & Gelar
+                        </label>
+                        <input
+                          type="text"
+                          value={signer.name}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSignatories((prev) => {
+                              const next = [...prev];
+                              next[index] = { ...next[index], name: val };
+                              return next;
+                            });
+                          }}
+                          placeholder="Nama lengkap..."
+                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 font-semibold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Nomor Identitas (NIM / NIP / NIDN)
+                        </label>
+                        <input
+                          type="text"
+                          value={signer.idNumber}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSignatories((prev) => {
+                              const next = [...prev];
+                              next[index] = { ...next[index], idNumber: val };
+                              return next;
+                            });
+                          }}
+                          placeholder="NIM. 2108561050"
+                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 font-mono"
+                        />
+                      </div>
+
+                      {/* Area Preview Goresan Tanda Tangan */}
+                      <div className="pt-2">
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Goresan Tanda Tangan Transparan:
+                        </label>
+                        <div className="h-24 rounded-lg border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center relative overflow-hidden">
+                          {signer.signatureImage ? (
+                            <img
+                              src={signer.signatureImage}
+                              alt={`TTD ${signer.name}`}
+                              className="max-h-20 max-w-[85%] object-contain filter drop-shadow-xs"
+                            />
+                          ) : (
+                            <div className="text-center p-3">
+                              <span className="text-xs text-slate-400 block">Belum ada tanda tangan</span>
+                              <span className="text-[10px] text-slate-400">
+                                Sertifikat akan tetap rapi (area kosong siap pulpen)
+                              </span>
+                            </div>
+                          )}
+                          {(index === 0 ? isProcessingSig1 : isProcessingSig2) && (
+                            <div className="absolute inset-0 bg-white/90 backdrop-blur-2xs flex flex-col items-center justify-center gap-1 z-10">
+                              <div className="w-5 h-5 border-2 border-emerald-800 border-t-transparent rounded-full animate-spin" />
+                              <span className="text-[11px] font-semibold text-emerald-900">
+                                Menghapus background kertas...
+                              </span>
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-xs text-slate-400 font-serif italic">
-                          (Menggunakan tanda tangan latin default)
-                        </span>
-                      )}
+                      </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    {/* Tombol Aksi Upload Scan & TTD Langsung */}
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                      <input
+                        type="file"
+                        ref={index === 0 ? sigInputRef1 : sigInputRef2}
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            processAndSetSignature(e.target.files[0], index);
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => (index === 0 ? sigInputRef1 : sigInputRef2).current?.click()}
+                        className="flex-1 py-1.5 px-3 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <span>📷</span>
+                        <span>Upload Foto Kertas</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => {
-                          setSigPadTarget(0);
+                          setSigPadTarget(index as 0 | 1);
                           setSigPadOpen(true);
                         }}
-                        className="flex-1 min-w-[130px] py-1.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                        className="py-1.5 px-3 rounded-lg border border-emerald-700 text-emerald-900 hover:bg-emerald-50 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                       >
                         <span>✍️</span>
-                        <span>TTD Langsung</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => sigInputRef1.current?.click()}
-                        className="flex-1 min-w-[130px] py-1.5 px-3 bg-blue-900 hover:bg-blue-800 text-white rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                        <span>Pilih Gambar TTD</span>
+                        <span>TTD di Layar</span>
                       </button>
 
-                      {signatories[0].signatureImage && (
+                      {signer.signatureImage && (
                         <button
                           type="button"
-                          onClick={() => resetSignatureToDefault(0)}
-                          className="py-1.5 px-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
-                          title="Hapus gambar & kembali ke tulisan latin"
+                          onClick={() => resetSignatureToDefault(index)}
+                          className="py-1.5 px-2.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold transition-all cursor-pointer"
+                          title="Hapus tanda tangan"
                         >
-                          Reset
+                          ✕
                         </button>
                       )}
                     </div>
                   </div>
-                </div>
-
-                {/* PENANDATANGAN 2 (KANAN) */}
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
-                      <span className="text-xs font-bold text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-900 flex items-center justify-center text-[10px]">2</span>
-                        Penandatangan Kanan (Misal: Ketua Umum HMP / Dekan)
-                      </span>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Jabatan / Posisi</label>
-                        <input
-                          type="text"
-                          value={signatories[1].title}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSignatories((prev) => [prev[0], { ...prev[1], title: val }]);
-                          }}
-                          placeholder="Contoh: Ketua Umum HMP"
-                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
-                        <input
-                          type="text"
-                          value={signatories[1].name}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSignatories((prev) => [prev[0], { ...prev[1], name: val }]);
-                          }}
-                          placeholder="Contoh: Nabila Zahra Khairunnisa"
-                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">NIM / NIP Manual</label>
-                        <input
-                          type="text"
-                          value={signatories[1].idNumber}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSignatories((prev) => [prev[0], { ...prev[1], idNumber: val }]);
-                          }}
-                          placeholder="Contoh: NIM. 2108561012 atau NIP. 1978..."
-                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white font-mono"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Upload Gambar Scan TTD 2 */}
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                      Upload Gambar Tanda Tangan (Foto Kertas / Scan)
-                    </label>
-
-                    <input
-                      type="file"
-                      ref={sigInputRef2}
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          processAndSetSignature(e.target.files[0], 1);
-                        }
-                      }}
-                    />
-
-                    {/* Preview Kotak TTD 2 */}
-                    <div className="h-16 bg-slate-50 border border-dashed border-slate-300 rounded-xl flex items-center justify-center p-2 mb-2 relative overflow-hidden bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:8px_8px]">
-                      {isProcessingSig2 ? (
-                        <span className="text-[11px] text-blue-900 font-semibold animate-pulse flex items-center gap-1.5">
-                          <span>✨</span>
-                          <span>Memindai goresan tinta & menghapus background...</span>
-                        </span>
-                      ) : signatories[1].signatureImage ? (
-                        <div className="relative w-full h-full flex items-center justify-center">
-                          <img
-                            src={signatories[1].signatureImage}
-                            alt="Preview TTD 2"
-                            className="max-h-12 max-w-[170px] object-contain drop-shadow-xs"
-                          />
-                          <span className="absolute bottom-0 right-0 text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold shadow-2xs">
-                            ✓ Tinta Transparan
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400 font-serif italic">
-                          (Menggunakan tanda tangan latin default)
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSigPadTarget(1);
-                          setSigPadOpen(true);
-                        }}
-                        className="flex-1 min-w-[130px] py-1.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <span>✍️</span>
-                        <span>TTD Langsung</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => sigInputRef2.current?.click()}
-                        className="flex-1 min-w-[130px] py-1.5 px-3 bg-blue-900 hover:bg-blue-800 text-white rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                        <span>Pilih Gambar TTD</span>
-                      </button>
-
-                      {signatories[1].signatureImage && (
-                        <button
-                          type="button"
-                          onClick={() => resetSignatureToDefault(1)}
-                          className="py-1.5 px-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
-                          title="Hapus gambar & kembali ke tulisan latin"
-                        >
-                          Reset
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900">
-                <div className="font-bold flex items-center gap-1.5 mb-1.5 text-blue-950">
-                  <span>💡</span>
-                  <span>Cara Kerja Pemindai Tanda Tangan Digital:</span>
-                </div>
-                <ul className="list-disc list-inside space-y-1 text-[11px] text-blue-800">
-                  <li><strong>Bukan Tempel Foto Biasa:</strong> Foto kertas Anda tidak akan ditempel mentah-mentah. Web otomatis membaca goresan pulpen Anda dan mengubahnya menjadi <strong>tinta digital murni (hitam/biru)</strong>.</li>
-                  <li><strong>Background & Bayangan Hilang Total:</strong> Sistem menggunakan algoritma adaptif untuk menghapus 100% warna kertas putih/abu-abu dan bayangan HP.</li>
-                  <li><strong>Ukuran Pas Otomatis:</strong> Kertas kosong di sekeliling tanda tangan dipotong rapi (auto-crop) sehingga posisinya langsung pas dan proporsional di atas nama penandatangan sertifikat!</li>
-                </ul>
+                ))}
               </div>
             </div>
           )}
         </section>
 
-        {/* Status Sumber Data & Fallback File Picker */}
+        {/* Status Sumber Data & Integrasi Google Sheets / CSV */}
         <section className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500">Sumber Data Aktif:</span>
             <strong className="text-xs text-slate-900">{dataSourceName}</strong>
-            <span className="text-xs bg-blue-50 text-blue-800 px-2 py-0.5 rounded font-mono font-bold">
-              {participants.length} data
+            <span className="text-xs bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded font-mono font-bold">
+              {participants.length} data dimuat
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                const currentUrl = localStorage.getItem('hmp_csv_url') || CONFIG.csvUrl;
+                const newUrl = prompt(
+                  'Masukkan URL CSV Google Sheets (File > Bagikan > Publikasikan ke web > format CSV):',
+                  currentUrl
+                );
+                if (newUrl !== null) {
+                  localStorage.setItem('hmp_csv_url', newUrl.trim());
+                  fetchCsvData();
+                }
+              }}
+              className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-800 hover:bg-emerald-50 text-xs font-bold cursor-pointer"
+            >
+              🔗 Ganti URL Google Sheets
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -1416,14 +1307,15 @@ export const PanitiaPage: React.FC = () => {
                   email: '',
                   jenis: 'peserta',
                   desain: 'klasik',
-                  seminar: filterSeminar || (seminarsList[0] || 'Seminar Akademik'),
+                  kegiatan: filterSeminar || seminarsList[0] || CONFIG.defaultKegiatan,
+                  seminar: filterSeminar || seminarsList[0] || CONFIG.defaultKegiatan,
                   tanggal: '12 November 2026',
                   nomor_sertifikat: '',
                   metode: 'cetak',
                 });
                 setShowAddManualModal(true);
               }}
-              className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5"
             >
               <span>+ Tambah Peserta Manual</span>
             </button>
@@ -1460,9 +1352,11 @@ export const PanitiaPage: React.FC = () => {
         {/* Filter Controls, Search NIM Manual, & Wet Signature Switch */}
         <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-            {/* Filter Seminar */}
+            {/* Filter Kegiatan / Seminar */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Seminar</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Kegiatan / Seminar ({seminarsList.length})
+              </label>
               <select
                 value={filterSeminar}
                 onChange={(e) => {
@@ -1471,6 +1365,7 @@ export const PanitiaPage: React.FC = () => {
                 }}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
               >
+                <option value="semua">Semua Kegiatan</option>
                 {seminarsList.map((s) => (
                   <option key={s} value={s}>
                     {s}
@@ -1479,9 +1374,9 @@ export const PanitiaPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Filter Jenis */}
+            {/* Filter Peran / Jenis */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Jenis Peran</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">Peran</label>
               <select
                 value={filterJenis}
                 onChange={(e) => {
@@ -1497,7 +1392,7 @@ export const PanitiaPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Filter Metode */}
+            {/* Filter Metode Cetak */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">Metode Distribusi</label>
               <select
@@ -1517,7 +1412,7 @@ export const PanitiaPage: React.FC = () => {
 
             {/* Input Pencarian NIM Manual */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Cari / Filter NIM Manual</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">Cari NIM Peserta</label>
               <input
                 type="text"
                 value={searchNimManual}
@@ -1535,7 +1430,7 @@ export const PanitiaPage: React.FC = () => {
                   type="checkbox"
                   checked={isWetSignature}
                   onChange={(e) => setIsWetSignature(e.target.checked)}
-                  className="w-4 h-4 text-blue-900 rounded"
+                  className="w-4 h-4 text-emerald-800 rounded"
                 />
                 <span className="text-[11px] text-slate-700 font-semibold leading-tight">
                   {isWetSignature ? 'Aktif (Kosong untuk pulpen)' : 'Nonaktif (Pakai TTD Digital)'}
@@ -1549,7 +1444,8 @@ export const PanitiaPage: React.FC = () => {
         <section className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-xs font-bold text-slate-800 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-              Terpilih: <strong className="text-blue-900">{selectedParticipants.length}</strong> dari {filteredParticipants.length} (Maks 50 per cetak)
+              Terpilih: <strong className="text-emerald-800">{selectedParticipants.length}</strong> dari{' '}
+              {filteredParticipants.length} (Maks 50 per cetak)
             </span>
 
             <button
@@ -1568,7 +1464,7 @@ export const PanitiaPage: React.FC = () => {
                     key={i}
                     type="button"
                     onClick={() => selectBatch(i * 50, 50)}
-                    className="px-2 py-0.5 bg-white text-slate-700 hover:bg-blue-900 hover:text-white rounded font-bold cursor-pointer transition-all"
+                    className="px-2 py-0.5 bg-white text-slate-700 hover:bg-emerald-800 hover:text-white rounded font-bold cursor-pointer transition-all"
                   >
                     {i * 50 + 1}-{Math.min((i + 1) * 50, filteredParticipants.length)}
                   </button>
@@ -1604,7 +1500,7 @@ export const PanitiaPage: React.FC = () => {
               type="button"
               onClick={handleBulkPrint}
               disabled={selectedParticipants.length === 0 || isPrinting}
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-900 hover:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-sm rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="6 9 6 2 18 2 18 9" />
@@ -1633,7 +1529,7 @@ export const PanitiaPage: React.FC = () => {
                         if (e.target.checked) selectAllFiltered();
                         else clearSelection();
                       }}
-                      className="w-4 h-4 text-blue-900 rounded"
+                      className="w-4 h-4 text-emerald-800 rounded"
                     />
                   </th>
                   <th
@@ -1655,6 +1551,7 @@ export const PanitiaPage: React.FC = () => {
                     NIM {sortBy === 'nim' && (sortAsc ? '▲' : '▼')}
                   </th>
                   <th className="p-3">Peran</th>
+                  <th className="p-3">Kegiatan</th>
                   <th className="p-3">Desain</th>
                   <th
                     className="p-3 cursor-pointer hover:bg-slate-100"
@@ -1672,7 +1569,7 @@ export const PanitiaPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredParticipants.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-slate-400">
+                    <td colSpan={9} className="p-8 text-center text-slate-400">
                       {searchNimManual
                         ? `Tidak ada peserta dengan NIM "${searchNimManual}".`
                         : 'Tidak ada peserta yang cocok dengan filter yang dipilih.'}
@@ -1687,7 +1584,7 @@ export const PanitiaPage: React.FC = () => {
                       <tr
                         key={originalIdx}
                         className={`hover:bg-slate-50 transition-colors ${
-                          isSelected ? 'bg-blue-50/50' : ''
+                          isSelected ? 'bg-emerald-50/60' : ''
                         }`}
                       >
                         <td className="p-3 text-center">
@@ -1695,7 +1592,7 @@ export const PanitiaPage: React.FC = () => {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelect(originalIdx)}
-                            className="w-4 h-4 text-blue-900 rounded"
+                            className="w-4 h-4 text-emerald-800 rounded"
                           />
                         </td>
                         <td className="p-3 font-semibold text-slate-900">{p.nama}</td>
@@ -1704,6 +1601,9 @@ export const PanitiaPage: React.FC = () => {
                           <span className="capitalize px-2 py-0.5 rounded font-bold text-[10px] bg-slate-100 text-slate-800">
                             {p.jenis}
                           </span>
+                        </td>
+                        <td className="p-3 text-[11px] text-slate-600 max-w-[200px] truncate" title={p.kegiatan || p.seminar}>
+                          {p.kegiatan || p.seminar}
                         </td>
                         <td className="p-3 font-mono text-[11px]">{p.desain}</td>
                         <td className="p-3 font-mono text-[11px]">{p.nomor_sertifikat}</td>
@@ -1736,6 +1636,57 @@ export const PanitiaPage: React.FC = () => {
           </div>
         </section>
       </main>
+
+      {/* MODAL PREVIEW CONTOH SERTIFIKAT */}
+      {previewSample && (
+        <div
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 no-print"
+          onClick={() => setPreviewSample(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Preview Sertifikat: {previewSample.nama}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Desain: <strong>{previewSample.desain}</strong> • Peran: <strong>{previewSample.jenis}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewSample(null)}
+                className="text-slate-400 hover:text-slate-700 text-2xl font-bold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto bg-slate-100 p-4 rounded-xl flex items-center justify-center">
+              <div className="transform scale-[0.6] sm:scale-[0.75] md:scale-[0.85] origin-center shadow-2xl">
+                <CertificateCanvas
+                  data={previewSample}
+                  isWetSignature={isWetSignature}
+                  signatoriesOverride={signatories}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewSample(null)}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 cursor-pointer"
+              >
+                Tutup Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL TAMBAH PESERTA MANUAL (TANPA CSV) */}
       {showAddManualModal && (
@@ -1798,9 +1749,23 @@ export const PanitiaPage: React.FC = () => {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Kegiatan / Seminar</label>
+                <input
+                  type="text"
+                  required
+                  value={manualForm.kegiatan || manualForm.seminar || ''}
+                  onChange={(e) =>
+                    setManualForm({ ...manualForm, kegiatan: e.target.value, seminar: e.target.value })
+                  }
+                  placeholder="Contoh: Seminar Akademik HMI"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Peran (Jenis)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Peran</label>
                   <select
                     value={manualForm.jenis}
                     onChange={(e) => setManualForm({ ...manualForm, jenis: e.target.value as RoleType })}
@@ -1812,7 +1777,7 @@ export const PanitiaPage: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Pilihan Desain</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Desain Sertifikat</label>
                   <select
                     value={manualForm.desain}
                     onChange={(e) => setManualForm({ ...manualForm, desain: e.target.value })}
@@ -1827,18 +1792,6 @@ export const PanitiaPage: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Seminar</label>
-                <input
-                  type="text"
-                  required
-                  value={manualForm.seminar}
-                  onChange={(e) => setManualForm({ ...manualForm, seminar: e.target.value })}
-                  placeholder="Nama kegiatan seminar..."
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal</label>
@@ -1850,28 +1803,42 @@ export const PanitiaPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">No. Sertifikat (Opsional)</label>
-                  <input
-                    type="text"
-                    value={manualForm.nomor_sertifikat}
-                    onChange={(e) => setManualForm({ ...manualForm, nomor_sertifikat: e.target.value })}
-                    placeholder="Otomatis jika kosong"
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono"
-                  />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Metode</label>
+                  <select
+                    value={manualForm.metode}
+                    onChange={(e) => setManualForm({ ...manualForm, metode: e.target.value })}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                  >
+                    <option value="cetak">Cetak</option>
+                    <option value="digital">Digital</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="pt-3 flex gap-2 justify-end">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nomor Sertifikat (Opsional, kosongkan untuk otomatis)
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.nomor_sertifikat}
+                  onChange={(e) => setManualForm({ ...manualForm, nomor_sertifikat: e.target.value })}
+                  placeholder="001/PST/SEM-AKD/XI/2026"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowAddManualModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold border border-slate-300 text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-900 text-white hover:bg-blue-800 cursor-pointer shadow-sm"
+                  className="px-5 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold shadow-md cursor-pointer"
                 >
                   Tambahkan ke Tabel
                 </button>
@@ -1881,80 +1848,24 @@ export const PanitiaPage: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL LIHAT CONTOH SERTIFIKAT (REALTIME DENGAN PEJABAT & TTD KUSTOM) */}
-      {previewSample && (
-        <div
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 no-print"
-          onClick={() => setPreviewSample(null)}
-        >
-          <div
-            className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Contoh Sertifikat: {previewSample.nama} ({previewSample.jenis.toUpperCase()})
-                </h3>
-                <span className="text-xs text-slate-500 font-mono">
-                  Desain: {previewSample.desain} | No: {previewSample.nomor_sertifikat}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreviewSample(null)}
-                className="text-slate-400 hover:text-slate-700 text-2xl font-bold cursor-pointer p-1"
-              >
-                &times;
-              </button>
-            </div>
-
-            <div className="p-4 overflow-auto flex-1 bg-slate-900 flex justify-center items-center">
-              <div className="w-[980px] h-[693px] origin-center scale-[0.38] sm:scale-[0.6] md:scale-[0.8] my-[-160px] sm:my-[-100px] md:my-[-50px]">
-                <CertificateCanvas
-                  data={previewSample}
-                  isWetSignature={isWetSignature}
-                  signatoriesOverride={signatories}
-                />
-              </div>
-            </div>
-
-            <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-between">
-              <span className="text-xs text-slate-500">
-                Mode TTD Basah: <strong>{isWetSignature ? 'Aktif' : 'Nonaktif'}</strong>
-              </span>
-              <button
-                type="button"
-                onClick={() => setPreviewSample(null)}
-                className="px-4 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================= */}
-      {/* MODAL TTD LANGSUNG DI LAYAR (HASIL MASUK KE PANEL PENANDATANGAN)  */}
-      {/* ================================================================= */}
+      {/* MODAL TANDA TANGAN LANGSUNG DI LAYAR (TOUCH / MOUSE) */}
       {sigPadOpen && (
         <div
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[60] flex items-center justify-center p-3 sm:p-6"
+          className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 no-print"
           onClick={() => setSigPadOpen(false)}
         >
           <div
-            className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl flex flex-col overflow-hidden"
+            className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header + status tinta */}
+            {/* Header modal */}
             <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Tanda Tangan Langsung — Penandatangan {sigPadTarget + 1}
+                  Goreskan Tanda Tangan: Penandatangan #{sigPadTarget + 1}
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Tanda tangani di area putih. Hasil otomatis jadi tinta hitam transparan.
+                  Tanda tangani di area putih. Hasil otomatis jadi tinta transparan.
                 </p>
               </div>
               <span
@@ -2010,7 +1921,7 @@ export const PanitiaPage: React.FC = () => {
                   type="button"
                   onClick={sigPadSave}
                   disabled={!sigPadHasInk}
-                  className="px-6 py-2.5 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold shadow-md transition-all disabled:opacity-40 cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold shadow-md transition-all disabled:opacity-40 cursor-pointer"
                 >
                   💾 Simpan TTD
                 </button>
@@ -2020,8 +1931,7 @@ export const PanitiaPage: React.FC = () => {
         </div>
       )}
 
-      {/* PORTAL CETAK MASSAL: Terisolasi ke luar #root ke #print-portal-root */}
-      {/* HANYA di-mount saat proses cetak aktif (isPrinting = true) agar tampilan UI layar 100% stabil & tidak bergeser */}
+      {/* PORTAL CETAK MASSAL */}
       {isPrinting && selectedParticipants.length > 0 && (
         <PrintPortal>
           <div className="print-portal-container">
