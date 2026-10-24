@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import Papa from 'papaparse';
 import Logo from '../assets/logo-hmi.png';
 import { supabase, isSupabaseConfigured } from '../supabaseClient';
-import { CONFIG, normalizeDesignId, normalizeJenis, normalizeKegiatan } from '../config';
+import { CONFIG, normalizeDesignId, normalizeJenis } from '../config';
 import { Participant, RoleType, SignerInfo } from '../types';
 import { CertificateCanvas } from '../components/CertificateCanvas';
 
@@ -73,8 +73,8 @@ export const PanitiaPage: React.FC = () => {
 
   const [filterSeminar, setFilterSeminar] = useState<string>('semua');
   const [filterJenis, setFilterJenis] = useState<string>('semua');
-  const [filterMetode, setFilterMetode] = useState<string>('semua'); // Tampilkan semua peserta secara bawaan
-  const [searchNimManual, setSearchNimManual] = useState<string>(''); // Pencarian NIM Manual
+  const [filterMetode, setFilterMetode] = useState<string>('semua');
+  const [searchNimManual, setSearchNimManual] = useState<string>('');
 
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [sortBy, setSortBy] = useState<'nama' | 'nim' | 'nomor_sertifikat'>('nim');
@@ -84,7 +84,6 @@ export const PanitiaPage: React.FC = () => {
   // PENGATURAN KUSTOM PENANDATANGAN & TTD DIGITAL OTOMATIS
   // -------------------------------------------------------------------------
   const [signatories, setSignatories] = useState<SignerInfo[]>(() => {
-    // Load dari localStorage saat mount
     const saved = localStorage.getItem('hmp_signatories');
     if (saved) {
       try {
@@ -111,7 +110,7 @@ export const PanitiaPage: React.FC = () => {
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
 
   // -------------------------------------------------------------------------
-  // TTD LANGSUNG DI LAYAR (tanpa backend, hasil masuk ke signatories)
+  // TTD LANGSUNG DI LAYAR
   // -------------------------------------------------------------------------
   const [sigPadOpen, setSigPadOpen] = useState<boolean>(false);
   const [sigPadTarget, setSigPadTarget] = useState<0 | 1>(0);
@@ -151,79 +150,47 @@ export const PanitiaPage: React.FC = () => {
   }, [signatureInkColor]);
 
   // Check Supabase session with local / demo fallback support
-// ✅ 1. Sesi diawali dengan NULL jika tidak ada Supabase / belum login
-useEffect(() => {
-  if (!isSupabaseConfigured || !supabase) {
-    const savedSession = localStorage.getItem('hmp_panitia_session');
-    if (savedSession) {
-      try {
-        setSession(JSON.parse(savedSession));
-      } catch {
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      const savedSession = localStorage.getItem('hmp_panitia_session');
+      if (savedSession) {
+        try {
+          setSession(JSON.parse(savedSession));
+        } catch {
+          setSession(null);
+        }
+      } else {
         setSession(null);
       }
-    } else {
-      setSession(null); // FIX: Wajibkan login, jangan auto-set panitia@hmi.org
+      setAuthChecking(false);
+      return;
     }
-    setAuthChecking(false);
-    return;
-  }
 
-  supabase.auth.getSession().then(({ data: { session: currentSession } }: any) => {
-    setSession(currentSession);
-    setAuthChecking(false);
-  });
+    supabase.auth.getSession().then(({ data: { session: currentSession } }: any) => {
+      setSession(currentSession);
+      setAuthChecking(false);
+    });
 
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((_event: any, newSession: any) => {
-    setSession(newSession);
-    setAuthChecking(false);
-  });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event: any, newSession: any) => {
+      setSession(newSession);
+      setAuthChecking(false);
+    });
 
-  return () => {
-    subscription.unsubscribe();
-  };
-}, []);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
-// ✅ 2. Handle Login ketat menggunakan Supabase Auth asli
-const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setAuthError(null);
-  setResetSentNotice(null);
-  setAuthLoading(true);
-
-  if (!isSupabaseConfigured || !supabase) {
-    setAuthError('Koneksi Supabase belum terpasang di server. Cek Variabel Environment (VITE_SUPABASE_URL).');
-    setAuthLoading(false);
-    return;
-  }
-
-  const { error } = await supabase.auth.signInWithPassword({
-    email: emailInput.trim(),
-    password: passwordInput,
-  });
-
-  setAuthLoading(false);
-
-  if (error) {
-    setAuthError('Email atau password salah / Belum dikonfirmasi.');
-  }
-};
-
-  // Fetch CSV ONLY after session is authenticated
-  useEffect(() => {
-    if (session) {
-      fetchCsvData();
-    }
-  }, [session]);
-
+  // Handle Login terpadu (Supabase Auth / Local Demo Fallback)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     setResetSentNotice(null);
     setAuthLoading(true);
 
-    if (!supabase) {
+    if (!isSupabaseConfigured || !supabase) {
       if (emailInput.trim()) {
         const demoSession = { user: { email: emailInput.trim() } };
         localStorage.setItem('hmp_panitia_session', JSON.stringify(demoSession));
@@ -243,9 +210,16 @@ const handleLogin = async (e: React.FormEvent) => {
     setAuthLoading(false);
 
     if (error) {
-      setAuthError('Email atau password salah');
+      setAuthError('Email atau password salah / Belum dikonfirmasi.');
     }
   };
+
+  // Fetch CSV ONLY after session is authenticated
+  useEffect(() => {
+    if (session) {
+      fetchCsvData();
+    }
+  }, [session]);
 
   const handleResetPassword = async () => {
     if (!supabase) {
@@ -279,9 +253,7 @@ const handleLogin = async (e: React.FormEvent) => {
     setSelectedIndices(new Set());
   };
 
-  // -------------------------------------------------------------------------
-  // PROSES SCAN GAMBAR TTD OTOMATIS (MENGHAPUS BACKGROUND KERTAS SECARA ADAPTIF)
-  // -------------------------------------------------------------------------
+  // Proses Scan Gambar TTD Otomatis
   const processAndSetSignature = async (
     file: File,
     signerIndex: number,
@@ -468,18 +440,14 @@ const handleLogin = async (e: React.FormEvent) => {
         ...next[signerIndex],
         signatureImage: '',
       };
+      if (!next[0].signatureImage && !next[1].signatureImage) {
+        localStorage.removeItem('hmp_signatories');
+      }
       return next;
     });
-    const updated = [...signatories];
-    updated[signerIndex] = { ...updated[signerIndex], signatureImage: '' };
-    if (!updated[0].signatureImage && !updated[1].signatureImage) {
-      localStorage.removeItem('hmp_signatories');
-    }
   };
 
-  // -------------------------------------------------------------------------
-  // KANVAS TTD LANGSUNG
-  // -------------------------------------------------------------------------
+  // Kanvas TTD Langsung
   const sizeSigPadCanvas = () => {
     const canvas = sigPadCanvasRef.current;
     if (!canvas || !sigPadOpen) return;
@@ -587,9 +555,7 @@ const handleLogin = async (e: React.FormEvent) => {
     setSigPadOpen(false);
   };
 
-  // -------------------------------------------------------------------------
-  // CSV FETCHING & DATA PROCESSING (DENGAN SINKRONISASI KEGIATAN / SEMINAR)
-  // -------------------------------------------------------------------------
+  // CSV Fetching & Data Processing
   const fetchCsvData = (file?: File) => {
     setDataLoading(true);
 
@@ -664,7 +630,6 @@ const handleLogin = async (e: React.FormEvent) => {
     const normalized: Participant[] = [];
     rows.forEach((row) => {
       const p = normalizeRow(row);
-      // Validasi fleksibel: nama & nim wajib, serta kegiatan atau seminar terisi
       if (p.nama && p.nim && (p.seminar || p.kegiatan)) {
         normalized.push(p);
       }
@@ -715,7 +680,6 @@ const handleLogin = async (e: React.FormEvent) => {
       else if (key === 'metode') res.metode = val.toLowerCase();
     }
 
-    // Pastikan seminar dan kegiatan saling sinkron agar filter dan canvas tidak kosong
     if (!res.seminar && res.kegiatan) res.seminar = res.kegiatan;
     if (!res.kegiatan && res.seminar) res.kegiatan = res.seminar;
     if (!res.seminar && !res.kegiatan) {
@@ -726,19 +690,16 @@ const handleLogin = async (e: React.FormEvent) => {
     return res;
   };
 
-  // Daftar kegiatan/seminar unik untuk filter dropdown
   const seminarsList = useMemo(() => {
     return Array.from(new Set(participants.map((p) => p.kegiatan || p.seminar || ''))).filter(Boolean);
   }, [participants]);
 
-  // Set default filter seminar jika belum dipilih
   useEffect(() => {
     if (seminarsList.length > 0 && !filterSeminar) {
       setFilterSeminar(seminarsList[0]);
     }
   }, [seminarsList, filterSeminar]);
 
-  // Filtered participants list (termasuk filter pencarian NIM manual)
   const filteredParticipants = useMemo(() => {
     const cleanSearchNim = searchNimManual.trim().toLowerCase();
 
@@ -757,7 +718,6 @@ const handleLogin = async (e: React.FormEvent) => {
           if (met !== '') return false;
         }
 
-        // Pencarian NIM Manual
         if (cleanSearchNim) {
           if (!p.nim.toLowerCase().includes(cleanSearchNim)) return false;
         }
@@ -771,7 +731,6 @@ const handleLogin = async (e: React.FormEvent) => {
       });
   }, [participants, filterSeminar, filterJenis, filterMetode, searchNimManual, sortBy, sortAsc]);
 
-  // Selection handlers
   const toggleSelect = (originalIndex: number) => {
     const next = new Set(selectedIndices);
     if (next.has(originalIndex)) {
@@ -810,14 +769,12 @@ const handleLogin = async (e: React.FormEvent) => {
     setSelectedIndices(new Set());
   };
 
-  // Selected participant objects for print
   const selectedParticipants = useMemo(() => {
     return Array.from(selectedIndices)
       .map((i) => participants[i])
       .filter(Boolean);
   }, [selectedIndices, participants]);
 
-  // Tambah Peserta Manual ke Tabel
   const handleAddManualParticipant = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualForm.nama || !manualForm.nim || (!manualForm.seminar && !manualForm.kegiatan)) {
@@ -840,7 +797,6 @@ const handleLogin = async (e: React.FormEvent) => {
     alert(`Peserta "${newP.nama}" berhasil ditambahkan ke tabel!`);
   };
 
-  // Trigger Bulk Print Langsung tanpa merusak atau menggeser UI layar
   const handleBulkPrint = async () => {
     if (selectedParticipants.length === 0) {
       alert('Pilih minimal satu sertifikat pada tabel sebelum mencetak.');
@@ -872,9 +828,6 @@ const handleLogin = async (e: React.FormEvent) => {
     window.addEventListener('afterprint', cleanup, { once: true });
   };
 
-  // -------------------------------------------------------------------------
-  // RENDER 1: LOADING CHECKING SESSION
-  // -------------------------------------------------------------------------
   if (authChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -886,9 +839,6 @@ const handleLogin = async (e: React.FormEvent) => {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // RENDER 2: FORM LOGIN JIKA BELUM ADA SESI
-  // -------------------------------------------------------------------------
   if (!session) {
     return (
       <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-slate-100">
@@ -1022,12 +972,8 @@ const handleLogin = async (e: React.FormEvent) => {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // RENDER 3: DASHBOARD ALAT CETAK MASSAL PANITIA (SESI AKTIF)
-  // -------------------------------------------------------------------------
   return (
     <div className="min-h-screen pb-16 bg-slate-50">
-      {/* Banner Wajib Panitia */}
       <div className="bg-[#052214] text-emerald-200 py-3 px-4 text-xs border border-emerald-900 flex items-center gap-x-4 shadow-lg no-print">
         <div className="flex items-center gap-2 max-w-6xl mx-auto w-full">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1039,7 +985,6 @@ const handleLogin = async (e: React.FormEvent) => {
         </div>
       </div>
 
-      {/* Top Header Panitia */}
       <header className="bg-white border-b border-slate-200 py-3.5 shadow-xs mb-6 no-print">
         <div className="max-w-6xl mx-auto px-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
@@ -1068,9 +1013,6 @@ const handleLogin = async (e: React.FormEvent) => {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 no-print space-y-6">
-        {/* ================================================================= */}
-        {/* PANEL KUSTOMISASI PENANDATANGAN & SCAN TTD DIGITAL OTOMATIS */}
-        {/* ================================================================= */}
         <section className="bg-white rounded-2xl border border-emerald-200 shadow-sm overflow-hidden">
           <div className="bg-gradient-to-r from-[#031d10] to-[#08301c] px-6 py-4 text-emerald-100 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2.5">
@@ -1096,7 +1038,6 @@ const handleLogin = async (e: React.FormEvent) => {
 
           {showSignerSettings && (
             <div className="p-6 bg-slate-50/50">
-              {/* Pilihan Warna Tinta Digital */}
               <div className="mb-5 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold text-slate-800">Warna Tinta Digital:</span>
@@ -1132,7 +1073,6 @@ const handleLogin = async (e: React.FormEvent) => {
                 </p>
               </div>
 
-              {/* Grid 2 Pejabat Penandatangan */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {signatories.map((signer, index) => (
                   <div
@@ -1211,7 +1151,6 @@ const handleLogin = async (e: React.FormEvent) => {
                         />
                       </div>
 
-                      {/* Area Preview Goresan Tanda Tangan */}
                       <div className="pt-2">
                         <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                           Goresan Tanda Tangan Transparan:
@@ -1243,7 +1182,6 @@ const handleLogin = async (e: React.FormEvent) => {
                       </div>
                     </div>
 
-                    {/* Tombol Aksi Upload Scan & TTD Langsung */}
                     <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
                       <input
                         type="file"
@@ -1295,7 +1233,6 @@ const handleLogin = async (e: React.FormEvent) => {
           )}
         </section>
 
-        {/* Status Sumber Data & Integrasi Google Sheets / CSV */}
         <section className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500">Sumber Data Aktif:</span>
@@ -1375,10 +1312,8 @@ const handleLogin = async (e: React.FormEvent) => {
           </div>
         </section>
 
-        {/* Filter Controls, Search NIM Manual, & Wet Signature Switch */}
         <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-            {/* Filter Kegiatan / Seminar */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
                 Kegiatan / Seminar ({seminarsList.length})
@@ -1400,7 +1335,6 @@ const handleLogin = async (e: React.FormEvent) => {
               </select>
             </div>
 
-            {/* Filter Peran / Jenis */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">Peran</label>
               <select
@@ -1418,7 +1352,6 @@ const handleLogin = async (e: React.FormEvent) => {
               </select>
             </div>
 
-            {/* Filter Metode Cetak */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">Metode Distribusi</label>
               <select
@@ -1436,7 +1369,6 @@ const handleLogin = async (e: React.FormEvent) => {
               </select>
             </div>
 
-            {/* Input Pencarian NIM Manual */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">Cari NIM Peserta</label>
               <input
@@ -1448,7 +1380,6 @@ const handleLogin = async (e: React.FormEvent) => {
               />
             </div>
 
-            {/* Saklar TTD Basah */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700">Saklar TTD Basah</label>
               <label className="inline-flex items-center gap-2 cursor-pointer bg-slate-50 p-2 rounded-xl border border-slate-200">
@@ -1466,7 +1397,6 @@ const handleLogin = async (e: React.FormEvent) => {
           </div>
         </section>
 
-        {/* Action Bar Cetak & Batching 50 */}
         <section className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-xs font-bold text-slate-800 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
@@ -1538,7 +1468,6 @@ const handleLogin = async (e: React.FormEvent) => {
           </div>
         </section>
 
-        {/* Tabel Data Peserta dengan Checkbox */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-700">
@@ -1663,7 +1592,6 @@ const handleLogin = async (e: React.FormEvent) => {
         </section>
       </main>
 
-      {/* MODAL PREVIEW CONTOH SERTIFIKAT */}
       {previewSample && (
         <div
           className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 no-print"
@@ -1714,7 +1642,6 @@ const handleLogin = async (e: React.FormEvent) => {
         </div>
       )}
 
-      {/* MODAL TAMBAH PESERTA MANUAL (TANPA CSV) */}
       {showAddManualModal && (
         <div
           className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 no-print"
@@ -1874,7 +1801,6 @@ const handleLogin = async (e: React.FormEvent) => {
         </div>
       )}
 
-      {/* MODAL TANDA TANGAN LANGSUNG DI LAYAR (TOUCH / MOUSE) */}
       {sigPadOpen && (
         <div
           className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 no-print"
@@ -1884,7 +1810,6 @@ const handleLogin = async (e: React.FormEvent) => {
             className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header modal */}
             <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
@@ -1905,7 +1830,6 @@ const handleLogin = async (e: React.FormEvent) => {
               </span>
             </div>
 
-            {/* Kanvas */}
             <div className="relative flex-1 min-h-[300px] sm:min-h-[380px] bg-white">
               <canvas
                 ref={sigPadCanvasRef}
@@ -1925,7 +1849,6 @@ const handleLogin = async (e: React.FormEvent) => {
               <div className="absolute left-[12%] right-[12%] bottom-[22%] pointer-events-none border-b-2 border-slate-200" />
             </div>
 
-            {/* Tombol aksi */}
             <div className="px-5 py-3.5 border-t border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
               <button
                 type="button"
@@ -1957,7 +1880,6 @@ const handleLogin = async (e: React.FormEvent) => {
         </div>
       )}
 
-      {/* PORTAL CETAK MASSAL */}
       {isPrinting && selectedParticipants.length > 0 && (
         <PrintPortal>
           <div className="print-portal-container">
