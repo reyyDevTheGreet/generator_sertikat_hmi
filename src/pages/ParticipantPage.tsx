@@ -298,7 +298,7 @@ export const ParticipantPage: React.FC = () => {
       <header className="bg-white border-b-2 border-amber-400 py-4 shadow-xs mb-6 sm:mb-8 no-print">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-3 w-full sm:w-auto justify-start">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
               <img src={Logo} alt="logo-hmi" className="w-full h-full object-contain" />
             </div>
             <div>

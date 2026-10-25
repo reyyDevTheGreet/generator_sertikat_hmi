@@ -211,12 +211,12 @@ export const GalleryPage: React.FC<GalleryPageProps> = ({
       <header className="bg-white border-b border-slate-200 py-4 shadow-xs mb-8 sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
-            <img src={Logo} alt="logo-hmi" className='h-15 w-15 rounded-xl flex justify-center items-center'/>
+            <img src={Logo} alt="logo-hmi" className='h-12 w-12 rounded-xl flex justify-center items-center'/>
             <div>
-              <h1 className="text-lg font-bold text-slate-900 leading-tight">
+              <h1 className="text-lg font-bold text-emerald-700 leading-tight">
                 Katalog {CONFIG.designs.length} Desain Sertifikat
               </h1>
-              <p className="text-xs text-slate-500 font-medium">
+              <p className="text-xs text-emerald-700 font-medium">
                 Halaman Panitia • Pilih Desain untuk Seminar Anda
               </p>
             </div>
